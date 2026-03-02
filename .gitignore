@@ -1,0 +1,12 @@
+# Python
+python/.venv/
+python/__pycache__/
+python/work_diary_mcp/__pycache__/
+*.pyc
+*.pyo
+
+# Diary data
+data/
+
+# Environment
+.env
