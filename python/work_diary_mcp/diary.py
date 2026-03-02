@@ -356,7 +356,7 @@ def edit_note(week_key: str, index: int, new_content: str) -> None:
 
     *index* is 1-based (as shown to the user).  Raises ValueError if out
     of range.  Any legacy ``timestamp`` field on the entry is left intact
-    so that old diary files continue to render correctly.
+    so that old diary files can be loaded and saved without losing data.
     """
     state = _load_state(week_key)
     notes = state["notes"]
