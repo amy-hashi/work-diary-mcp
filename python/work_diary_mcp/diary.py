@@ -11,7 +11,7 @@ from work_diary_mcp.statuses import is_completed
 # Types
 # --------------------------------------------------------------------------- #
 
-type DiaryState = dict  # {weekKey, projects, projectNotes, notes}
+DiaryState = dict  # {weekKey, projects, projectNotes, notes}
 
 
 # --------------------------------------------------------------------------- #
@@ -216,18 +216,14 @@ def update_project_status(
     state = _load_state(week_key)
 
     # Case-insensitive match on existing keys to avoid duplicates
-    existing_key = next(
-        (k for k in state["projects"] if k.lower() == project.lower()), None
-    )
+    existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
     key = existing_key or linkify_jira_refs(project)
     state["projects"][key] = status
 
     if note is not None:
         linkified_note = linkify_jira_refs(note)
         if append_note and key in state["projectNotes"]:
-            state["projectNotes"][key] = (
-                state["projectNotes"][key] + " — " + linkified_note
-            )
+            state["projectNotes"][key] = state["projectNotes"][key] + " — " + linkified_note
         else:
             state["projectNotes"][key] = linkified_note
 
@@ -242,9 +238,7 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
     """
     state = _load_state(week_key)
 
-    old_key = next(
-        (k for k in state["projects"] if k.lower() == old_name.lower()), None
-    )
+    old_key = next((k for k in state["projects"] if k.lower() == old_name.lower()), None)
     if old_key is None:
         raise ValueError(
             f'Project "{old_name}" not found in the diary for the week of '
@@ -253,11 +247,7 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
 
     # Prevent collisions with an existing different project
     collision = next(
-        (
-            k
-            for k in state["projects"]
-            if k.lower() == new_name.lower() and k != old_key
-        ),
+        (k for k in state["projects"] if k.lower() == new_name.lower() and k != old_key),
         None,
     )
     if collision is not None:
@@ -269,12 +259,10 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
     # Rebuild dicts preserving insertion order, swapping the key in-place
     linked_new_name = linkify_jira_refs(new_name)
     state["projects"] = {
-        (linked_new_name if k == old_key else k): v
-        for k, v in state["projects"].items()
+        (linked_new_name if k == old_key else k): v for k, v in state["projects"].items()
     }
     state["projectNotes"] = {
-        (linked_new_name if k == old_key else k): v
-        for k, v in state["projectNotes"].items()
+        (linked_new_name if k == old_key else k): v for k, v in state["projectNotes"].items()
     }
 
     _save_state(state)
@@ -303,18 +291,14 @@ def bulk_update_projects(
         note = item.get("note")
         append_note = bool(item.get("append_note", False))
 
-        existing_key = next(
-            (k for k in state["projects"] if k.lower() == project.lower()), None
-        )
+        existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
         key = existing_key or linkify_jira_refs(project)
         state["projects"][key] = status
 
         if note is not None:
             linkified_note = linkify_jira_refs(note)
             if append_note and key in state["projectNotes"]:
-                state["projectNotes"][key] = (
-                    state["projectNotes"][key] + " — " + linkified_note
-                )
+                state["projectNotes"][key] = state["projectNotes"][key] + " — " + linkified_note
             else:
                 state["projectNotes"][key] = linkified_note
 
@@ -328,9 +312,7 @@ def remove_project(week_key: str, project: str) -> None:
     """Remove a project and its note from the diary."""
     state = _load_state(week_key)
 
-    existing_key = next(
-        (k for k in state["projects"] if k.lower() == project.lower()), None
-    )
+    existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
     if existing_key is None:
         raise ValueError(
             f'Project "{project}" not found in the diary for the week of '
@@ -346,9 +328,7 @@ def clear_project_note(week_key: str, project: str) -> None:
     """Clear the inline note for a project, leaving its status intact."""
     state = _load_state(week_key)
 
-    existing_key = next(
-        (k for k in state["projects"] if k.lower() == project.lower()), None
-    )
+    existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
     if existing_key is None:
         raise ValueError(
             f'Project "{project}" not found in the diary for the week of '
@@ -432,7 +412,5 @@ def list_projects(week_key: str) -> dict[str, str]:
 def list_week_keys() -> list[str]:
     """Return all week keys found in the data directory, sorted ascending."""
     return sorted(
-        p.stem
-        for p in get_data_dir().glob("*.json")
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", p.stem)
+        p.stem for p in get_data_dir().glob("*.json") if re.match(r"^\d{4}-\d{2}-\d{2}$", p.stem)
     )

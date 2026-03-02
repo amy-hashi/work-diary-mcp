@@ -10,6 +10,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+    "ruff>=0.8.0",
 ]
 
 [project.scripts]
@@ -24,3 +25,24 @@ packages = ["work_diary_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "UP017", # use datetime.UTC alias — conflicts with `from datetime import timezone` pattern
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["work_diary_mcp"]

@@ -41,9 +41,7 @@ mcp = FastMCP(
 
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
 def update_project_status_tool(
-    project: Annotated[
-        str, "The name of the project to update, e.g. 'Project Phoenix'"
-    ],
+    project: Annotated[str, "The name of the project to update, e.g. 'Project Phoenix'"],
     status: Annotated[
         str,
         "The new status for the project, e.g. 'On Track', 'Blocked', 'Done'. "
@@ -149,10 +147,7 @@ def remove_project_tool(
     try:
         page = get_or_create_week_page()
         remove_project(page["week_key"], project)
-        return (
-            f"🗑️ Removed **{project}** from your diary "
-            f"for the week of **{page['week_label']}**."
-        )
+        return f"🗑️ Removed **{project}** from your diary for the week of **{page['week_label']}**."
     except Exception as e:
         raise ToolError(str(e)) from e
 
@@ -218,10 +213,7 @@ def edit_note_tool(
     try:
         page = get_or_create_week_page()
         edit_note(page["week_key"], index, new_content)
-        return (
-            f"✏️ Updated note [{index}] in your diary "
-            f"for the week of **{page['week_label']}**."
-        )
+        return f"✏️ Updated note [{index}] in your diary for the week of **{page['week_label']}**."
     except Exception as e:
         raise ToolError(str(e)) from e
 
@@ -267,9 +259,7 @@ def get_diary(
         week_key = parse_week_key(date) if date else get_week_key()
         week_label = get_week_label(week_key)
         markdown = get_diary_markdown(week_key)
-        return (
-            f"Here is your work diary for the week of **{week_label}**:\n\n{markdown}"
-        )
+        return f"Here is your work diary for the week of **{week_label}**:\n\n{markdown}"
     except Exception as e:
         raise ToolError(str(e)) from e
 
