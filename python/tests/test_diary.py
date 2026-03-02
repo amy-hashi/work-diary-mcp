@@ -9,7 +9,6 @@ and never touch real diary files.
 from __future__ import annotations
 
 import json
-import os
 from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -98,9 +97,7 @@ class TestParseWeekKey:
 
 
 class TestConfig:
-    def test_env_var_takes_precedence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_env_var_takes_precedence(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """WORK_DIARY_DATA_DIR overrides everything else."""
         import work_diary_mcp.config as config_mod
 
@@ -171,9 +168,7 @@ class TestConfig:
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
-    def test_data_dir_wrong_type_raises(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_data_dir_wrong_type_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """A non-string data_dir in settings.toml raises TypeError."""
         import work_diary_mcp.config as config_mod
 
@@ -186,9 +181,7 @@ class TestConfig:
         with pytest.raises(TypeError, match="data_dir"):
             config_mod.get_data_dir()
 
-    def test_path_exists_but_is_file_raises(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_path_exists_but_is_file_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """A configured path that exists as a regular file raises ValueError."""
         import work_diary_mcp.config as config_mod
 
@@ -212,9 +205,7 @@ class TestConfig:
         assert result == (tmp_path / "diary").resolve()
         assert result.is_dir()
 
-    def test_get_data_dir_creates_directory(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_get_data_dir_creates_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """get_data_dir() creates the target directory if it does not exist."""
         import work_diary_mcp.config as config_mod
 
@@ -237,9 +228,7 @@ class TestConfig:
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
-    def test_settings_file_tilde_expansion(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_settings_file_tilde_expansion(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """A ~ in settings.toml data_dir is expanded correctly."""
         import work_diary_mcp.config as config_mod
 
@@ -327,9 +316,7 @@ class TestMigrateState:
             "projects": {"Alpha": "On Track"},
             "notes": [],
         }
-        (diary_dir / f"{week_key}.json").write_text(
-            json.dumps(legacy), encoding="utf-8"
-        )
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(legacy), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
         assert "projectNotes" in state
@@ -358,15 +345,10 @@ class TestMigrateState:
             "projectNotes": {},
             "notes": [],
         }
-        (diary_dir / f"{week_key}.json").write_text(
-            json.dumps(pre_linking), encoding="utf-8"
-        )
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
-        assert (
-            "[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)"
-            in state["projects"]
-        )
+        assert "[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)" in state["projects"]
         assert "CAG-516" not in state["projects"]
 
     def test_bare_ticket_in_project_note_linkified_on_load(self, diary_dir):
@@ -378,9 +360,7 @@ class TestMigrateState:
             "projectNotes": {"Alpha": "blocked by TF-9999"},
             "notes": [],
         }
-        (diary_dir / f"{week_key}.json").write_text(
-            json.dumps(pre_linking), encoding="utf-8"
-        )
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
         assert (
@@ -397,9 +377,7 @@ class TestMigrateState:
             "projectNotes": {"TF-1234": "needs attention"},
             "notes": [],
         }
-        (diary_dir / f"{week_key}.json").write_text(
-            json.dumps(pre_linking), encoding="utf-8"
-        )
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
         linked_key = "[TF-1234](https://hashicorp.atlassian.net/browse/TF-1234)"
@@ -422,9 +400,7 @@ class TestMigrateState:
                 },
             ],
         }
-        (diary_dir / f"{week_key}.json").write_text(
-            json.dumps(pre_linking), encoding="utf-8"
-        )
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
         assert (
@@ -442,9 +418,7 @@ class TestMigrateState:
             "projectNotes": {},
             "notes": [],
         }
-        (diary_dir / f"{week_key}.json").write_text(
-            json.dumps(already_linked), encoding="utf-8"
-        )
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(already_linked), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
         assert list(state["projects"].keys()) == [linked]
@@ -523,9 +497,7 @@ class TestCarryForward:
                 "projectNotes": {},
                 "notes": [],
             }
-            (diary_dir / f"{week_key}.json").write_text(
-                json.dumps(state), encoding="utf-8"
-            )
+            (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
 
         result = diary_mod._get_carry_forward_state()
         assert list(result["projects"].keys()) == ["NewProject"]
@@ -622,9 +594,7 @@ class TestGetOrCreateWeekPage:
             "projectNotes": {"CarriedProject": "still at risk"},
             "notes": [],
         }
-        (diary_dir / f"{prior}.json").write_text(
-            json.dumps(prior_state), encoding="utf-8"
-        )
+        (diary_dir / f"{prior}.json").write_text(json.dumps(prior_state), encoding="utf-8")
 
         today = date(2026, 3, 4)
         with patch("work_diary_mcp.diary.date") as mock_date:
@@ -668,9 +638,7 @@ class TestUpdateProjectStatus:
 
     def test_sets_note(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(
-            week_key, "Alpha", "On Track", note="going well"
-        )
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="going well")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert state["projectNotes"]["Alpha"] == "going well"
 
@@ -1003,9 +971,7 @@ class TestListWeekKeys:
                 "projectNotes": {},
                 "notes": [],
             }
-            (diary_dir / f"{week_key}.json").write_text(
-                json.dumps(state), encoding="utf-8"
-            )
+            (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
         assert diary_mod.list_week_keys() == [
             "2026-02-23",
             "2026-03-02",
@@ -1124,7 +1090,7 @@ class TestMarkdownRendering:
         md = render_diary(state)
         # The Notes cell for Alpha should be empty: "| Alpha | ... |  |"
         assert "| Alpha |" in md
-        lines = [l for l in md.splitlines() if "| Alpha |" in l]
+        lines = [line for line in md.splitlines() if "| Alpha |" in line]
         assert len(lines) == 1
         assert lines[0].endswith("|  |")
 
@@ -1271,16 +1237,11 @@ class TestJiraLinkificationIntegration:
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "TF-34398", "On Track")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
-            in state["projects"]
-        )
+        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in state["projects"]
 
     def test_bare_ticket_in_note_is_linked(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(
-            week_key, "Alpha", "Blocked", note="blocked by TF-34398"
-        )
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="blocked by TF-34398")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert (
             "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
@@ -1304,9 +1265,7 @@ class TestJiraLinkificationIntegration:
 
     def test_append_note_linkifies_new_fragment(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(
-            week_key, "Alpha", "On Track", note="initial note"
-        )
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="initial note")
         diary_mod.update_project_status(
             week_key, "Alpha", "Blocked", note="see TF-9999", append_note=True
         )
@@ -1320,10 +1279,7 @@ class TestJiraLinkificationIntegration:
         diary_mod.update_project_status(week_key, "Old Name", "On Track")
         diary_mod.rename_project(week_key, "Old Name", "TF-34398")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
-            in state["projects"]
-        )
+        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in state["projects"]
         assert "Old Name" not in state["projects"]
 
     def test_bulk_update_linkifies_project_and_note(self, diary_dir):
@@ -1335,16 +1291,10 @@ class TestJiraLinkificationIntegration:
             ],
         )
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
-            in state["projects"]
-        )
+        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in state["projects"]
         notes = state["projectNotes"]
         linked_key = "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
-        assert (
-            "[RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)"
-            in notes[linked_key]
-        )
+        assert "[RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)" in notes[linked_key]
 
     def test_add_note_linkifies_content(self, diary_dir):
         week_key = "2026-03-02"
