@@ -1,21 +1,4 @@
-from datetime import datetime
-
 from work_diary_mcp.statuses import format_status
-
-# --------------------------------------------------------------------------- #
-# Timestamp formatter
-# --------------------------------------------------------------------------- #
-
-
-def format_timestamp(iso: str) -> str:
-    """Format an ISO timestamp as 'Mon, Mar 2, 10:15 AM'."""
-    try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        dt = dt.astimezone(tz=None)  # convert to local time
-        return dt.strftime("%a, %b %-d, %-I:%M %p")
-    except ValueError:
-        return iso
-
 
 # --------------------------------------------------------------------------- #
 # Renderer
@@ -64,9 +47,8 @@ def render_diary(state: dict) -> str:
         lines.append("*(no notes yet)*")
     else:
         for i, entry in enumerate(notes):
-            timestamp = format_timestamp(entry.get("timestamp", ""))
             content = entry.get("content", "")
-            lines.append(f"- **[{i + 1}] {timestamp}** — {content}")
+            lines.append(f"- **[{i + 1}]** {content}")
 
     lines.append("")
 
