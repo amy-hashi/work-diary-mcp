@@ -88,8 +88,34 @@ def _empty_state(week_key: str) -> DiaryState:
 
 
 def _migrate_state(state: DiaryState) -> DiaryState:
-    """Ensure older diary files without projectNotes load cleanly."""
+    """Ensure older diary files load cleanly and have all fields linkified.
+
+    Migrations applied (all idempotent):
+    1. Add ``projectNotes`` if missing (legacy files pre-date that field).
+    2. Linkify bare Jira ticket references in project keys, their associated
+       notes, and general note contents so that files written before the
+       auto-linking feature was introduced are upgraded on first load.
+    """
     state.setdefault("projectNotes", {})
+
+    # Linkify project keys and their notes.  We rebuild both dicts together so
+    # the key used in projectNotes stays in sync with the key in projects.
+    old_projects: dict[str, str] = state["projects"]
+    old_notes: dict[str, str] = state["projectNotes"]
+    new_projects: dict[str, str] = {}
+    new_notes: dict[str, str] = {}
+    for key, status in old_projects.items():
+        new_key = linkify_jira_refs(key)
+        new_projects[new_key] = status
+        if key in old_notes:
+            new_notes[new_key] = linkify_jira_refs(old_notes[key])
+    state["projects"] = new_projects
+    state["projectNotes"] = new_notes
+
+    # Linkify general note contents.
+    for entry in state.get("notes", []):
+        entry["content"] = linkify_jira_refs(entry["content"])
+
     return state
 
 

@@ -243,7 +243,7 @@ def delete_note_tool(
         deleted = delete_note(page["week_key"], index)
         return (
             f"🗑️ Deleted note [{index}] from your diary "
-            f"for the week of **{page['week_label']}**: "{deleted}""
+            f"for the week of **{page['week_label']}**: '{deleted}'"
         )
     except Exception as e:
         raise ToolError(str(e)) from e
