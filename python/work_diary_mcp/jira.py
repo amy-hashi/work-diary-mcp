@@ -30,10 +30,10 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 #   \b           — word boundary before the prefix
 #   (PREFIX)     — one of the known project prefixes (case-insensitive)
 #   -            — literal hyphen
-#   (\d{4,})     — four or more digits
+#   (\d{3,})     — three or more digits
 #   \b           — word boundary after the digits
 _BARE_TICKET_RE = re.compile(
-    rf"\b({_PREFIX_ALTERNATION})-(\d{{4,}})\b",
+    rf"\b({_PREFIX_ALTERNATION})-(\d{{3,}})\b",
     re.IGNORECASE,
 )
 
@@ -60,8 +60,8 @@ def linkify_jira_refs(text: str) -> str:
 
     Examples::
 
-        >>> linkify_jira_refs("PROJ-34398")
-        '[PROJ-34398](https://jira.example.com/browse/PROJ-34398)'
+        >>> linkify_jira_refs("ENG-516")
+        '[ENG-516](https://jira.example.com/browse/ENG-516)'
 
         >>> linkify_jira_refs("see [PROJ-34398](https://jira.example.com/browse/PROJ-34398)")
         'see [PROJ-34398](https://jira.example.com/browse/PROJ-34398)'
