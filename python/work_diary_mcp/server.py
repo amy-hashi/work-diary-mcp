@@ -77,6 +77,13 @@ def update_project_status_tool(
 ) -> str:
     """Update (or add) a project's status in this week's work diary.
 
+    Before calling this tool:
+    - Transform the project name, status, and note into professional but authentic
+      language, preserving the writer's voice, technical terms, Jira references,
+      and Markdown links.
+    - If the content appears to be an incomplete thought or fragment, ask the
+      user a clarifying question instead of saving.
+
     Creates a new diary page if this is the first interaction of the week,
     carrying forward all non-completed projects from the prior week.
     """
@@ -107,6 +114,13 @@ def bulk_update_projects_tool(
     ],
 ) -> str:
     """Update multiple projects in a single operation.
+
+    Before calling this tool:
+    - Transform each project name, status, and note into professional but authentic
+      language, preserving the writer's voice, technical terms, Jira references,
+      and Markdown links.
+    - If any entry appears to be an incomplete thought or fragment, ask the
+      user a clarifying question instead of saving.
 
     More efficient than calling update_project_status repeatedly when you
     have several projects to update at once, e.g. during a standup.
