@@ -876,13 +876,11 @@ class TestNotes:
         assert state["notes"][0]["content"] == "first note"
         assert state["notes"][1]["content"] == "second note"
 
-    def test_add_note_timestamp_is_utc_aware(self, diary_dir):
+    def test_add_note_has_no_automatic_timestamp(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.add_note(week_key, "check timestamp")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        ts = state["notes"][0]["timestamp"]
-        # datetime.now(timezone.utc).isoformat() produces "+00:00" suffix
-        assert "+00:00" in ts or ts.endswith("Z"), f"Unexpected timestamp: {ts}"
+        assert "timestamp" not in state["notes"][0]
 
     def test_edit_note_replaces_content(self, diary_dir):
         week_key = "2026-03-02"
@@ -891,15 +889,22 @@ class TestNotes:
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert state["notes"][0]["content"] == "updated content"
 
-    def test_edit_note_preserves_timestamp(self, diary_dir):
+    def test_edit_note_preserves_legacy_timestamp(self, diary_dir):
+        """edit_note should leave a legacy timestamp field intact if present."""
         week_key = "2026-03-02"
-        diary_mod.add_note(week_key, "original")
-        state_before = json.loads((diary_dir / f"{week_key}.json").read_text())
-        original_ts = state_before["notes"][0]["timestamp"]
+        legacy_ts = "2026-03-02T10:00:00+00:00"
+        state = {
+            "weekKey": week_key,
+            "projects": {},
+            "projectNotes": {},
+            "notes": [{"timestamp": legacy_ts, "content": "original"}],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
 
         diary_mod.edit_note(week_key, 1, "updated")
         state_after = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state_after["notes"][0]["timestamp"] == original_ts
+        assert state_after["notes"][0]["timestamp"] == legacy_ts
+        assert state_after["notes"][0]["content"] == "updated"
 
     def test_edit_note_out_of_range_raises(self, diary_dir):
         week_key = "2026-03-02"
@@ -999,31 +1004,6 @@ class TestListWeekKeys:
 # ---------------------------------------------------------------------------
 
 
-class TestFormatTimestamp:
-    def test_formats_valid_utc_timestamp(self):
-        from work_diary_mcp.markdown import format_timestamp
-
-        # A known UTC time; just verify it parses without returning the raw string
-        result = format_timestamp("2026-03-02T10:15:00+00:00")
-        assert result != "2026-03-02T10:15:00+00:00"
-        # Should contain the day abbreviation and the date
-        assert "Mon" in result
-        assert "Mar" in result
-
-    def test_formats_z_suffix_timestamp(self):
-        from work_diary_mcp.markdown import format_timestamp
-
-        result = format_timestamp("2026-03-02T10:15:00Z")
-        assert result != "2026-03-02T10:15:00Z"
-        assert "Mar" in result
-
-    def test_invalid_timestamp_returns_original(self):
-        from work_diary_mcp.markdown import format_timestamp
-
-        bad = "not-a-timestamp"
-        assert format_timestamp(bad) == bad
-
-
 class TestMarkdownRendering:
     def test_notes_are_numbered(self, diary_dir):
         from work_diary_mcp.markdown import render_diary
@@ -1033,8 +1013,8 @@ class TestMarkdownRendering:
             "projects": {},
             "projectNotes": {},
             "notes": [
-                {"timestamp": "2026-03-02T10:00:00+00:00", "content": "first"},
-                {"timestamp": "2026-03-02T11:00:00+00:00", "content": "second"},
+                {"content": "first"},
+                {"content": "second"},
             ],
         }
         md = render_diary(state)

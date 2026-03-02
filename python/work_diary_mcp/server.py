@@ -29,7 +29,25 @@ mcp = FastMCP(
         "Each Monday a new diary page is created automatically, carrying forward "
         "projects from the prior week (excluding any projects marked as Done, "
         "Completed, Cancelled, or otherwise complete). Diary files are stored as "
-        "Markdown and can be copied directly into Microsoft Loop."
+        "Markdown and can be copied directly into Microsoft Loop.\n\n"
+        "## Tone and style\n\n"
+        "Before saving any note or project update, review the content and transform "
+        "it into professional but authentic language. Preserve the writer's voice and "
+        "personality — the goal is polished, not sterile. Preserve all technical "
+        "terms, Jira ticket IDs, and any existing Markdown links as-is. Do not "
+        "manually convert bare Jira keys into links; the server will auto-linkify "
+        "them on save. Remove or rephrase any language that would be inappropriate in "
+        "a professional context (e.g. profanity, excessive frustration, dismissive "
+        "phrasing) while retaining the underlying meaning and emotional tone where "
+        "appropriate.\n\n"
+        "## Completeness\n\n"
+        "If a note or project update appears to be an incomplete thought, a fragment, "
+        "or an unfinished message (e.g. trailing off, missing context, ambiguous "
+        "references like 'that thing' or 'the issue'), ask the user a focused "
+        "clarifying question before saving. Do not guess or fill in missing details.\n\n"
+        "## Timestamps\n\n"
+        "Do not add timestamps to notes automatically. Only include a date or time in "
+        "a note if the user explicitly mentions one."
     ),
 )
 
@@ -61,6 +79,13 @@ def update_project_status_tool(
 ) -> str:
     """Update (or add) a project's status in this week's work diary.
 
+    Before calling this tool:
+    - Transform the project name, status, and note into professional but authentic
+      language, preserving the writer's voice, technical terms, Jira references,
+      and Markdown links.
+    - If the content appears to be an incomplete thought or fragment, ask the
+      user a clarifying question instead of saving.
+
     Creates a new diary page if this is the first interaction of the week,
     carrying forward all non-completed projects from the prior week.
     """
@@ -91,6 +116,13 @@ def bulk_update_projects_tool(
     ],
 ) -> str:
     """Update multiple projects in a single operation.
+
+    Before calling this tool:
+    - Transform each project name, status, and note into professional but authentic
+      language, preserving the writer's voice, technical terms, Jira references,
+      and Markdown links.
+    - If any entry appears to be an incomplete thought or fragment, ask the
+      user a clarifying question instead of saving.
 
     More efficient than calling update_project_status repeatedly when you
     have several projects to update at once, e.g. during a standup.
@@ -178,9 +210,15 @@ def add_note_tool(
 ) -> str:
     """Append a note to the general notes section of this week's work diary.
 
-    Notes are timestamped automatically. Creates a new diary page if this
-    is the first interaction of the week, carrying forward all non-completed
-    projects from the prior week.
+    Before calling this tool:
+    - Transform the content into professional but authentic language, preserving
+      the writer's voice, technical terms, Jira references, and Markdown links.
+    - If the content appears to be an incomplete thought or fragment, ask the
+      user a clarifying question instead of saving.
+    - Do not add a timestamp. Only include a date or time if the user mentioned one.
+
+    Creates a new diary page if this is the first interaction of the week,
+    carrying forward all non-completed projects from the prior week.
     """
     try:
         page = get_or_create_week_page()
@@ -206,7 +244,13 @@ def edit_note_tool(
 ) -> str:
     """Edit an existing note in this week's diary.
 
-    Replaces the note's content while preserving its original timestamp.
+    Before calling this tool:
+    - Transform the new content into professional but authentic language, preserving
+      the writer's voice, technical terms, Jira references, and Markdown links.
+    - If the new content appears to be an incomplete thought or fragment, ask the
+      user a clarifying question instead of saving.
+    - Do not add a timestamp. Only include a date or time if the user mentioned one.
+
     Use get_diary first to see the notes and their index numbers.
     Raises an error if the index is out of range.
     """

@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
 from work_diary_mcp.config import get_data_dir
@@ -340,22 +340,23 @@ def clear_project_note(week_key: str, project: str) -> None:
 
 
 def add_note(week_key: str, content: str) -> None:
-    """Append a timestamped note to the general notes section."""
+    """Append a note to the general notes section.
+
+    No automatic timestamp is stored. If the content contains an explicit
+    date or time reference it is preserved as-is within the content string.
+    """
     state = _load_state(week_key)
-    state["notes"].append(
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "content": linkify_jira_refs(content),
-        }
-    )
+    entry: dict = {"content": linkify_jira_refs(content)}
+    state["notes"].append(entry)
     _save_state(state)
 
 
 def edit_note(week_key: str, index: int, new_content: str) -> None:
-    """Replace the content of an existing note, preserving its timestamp.
+    """Replace the content of an existing note.
 
     *index* is 1-based (as shown to the user).  Raises ValueError if out
-    of range.
+    of range.  Any legacy ``timestamp`` field on the entry is left intact
+    so that old diary files can be loaded and saved without losing data.
     """
     state = _load_state(week_key)
     notes = state["notes"]
