@@ -349,6 +349,106 @@ class TestMigrateState:
         state = diary_mod._load_state(week_key)
         assert state["projectNotes"] == {"Alpha": "existing note"}
 
+    def test_bare_ticket_key_linkified_on_load(self, diary_dir):
+        """A project key that is a bare ticket ref is linkified during migration."""
+        week_key = "2026-03-02"
+        pre_linking = {
+            "weekKey": week_key,
+            "projects": {"CAG-516": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(
+            json.dumps(pre_linking), encoding="utf-8"
+        )
+
+        state = diary_mod._load_state(week_key)
+        assert (
+            "[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)"
+            in state["projects"]
+        )
+        assert "CAG-516" not in state["projects"]
+
+    def test_bare_ticket_in_project_note_linkified_on_load(self, diary_dir):
+        """A project note containing a bare ticket ref is linkified during migration."""
+        week_key = "2026-03-02"
+        pre_linking = {
+            "weekKey": week_key,
+            "projects": {"Alpha": "Blocked"},
+            "projectNotes": {"Alpha": "blocked by TF-9999"},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(
+            json.dumps(pre_linking), encoding="utf-8"
+        )
+
+        state = diary_mod._load_state(week_key)
+        assert (
+            "[TF-9999](https://hashicorp.atlassian.net/browse/TF-9999)"
+            in state["projectNotes"]["Alpha"]
+        )
+
+    def test_project_note_key_stays_in_sync_after_key_linkification(self, diary_dir):
+        """When a project key is linkified, its projectNotes entry is re-keyed to match."""
+        week_key = "2026-03-02"
+        pre_linking = {
+            "weekKey": week_key,
+            "projects": {"TF-1234": "At Risk"},
+            "projectNotes": {"TF-1234": "needs attention"},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(
+            json.dumps(pre_linking), encoding="utf-8"
+        )
+
+        state = diary_mod._load_state(week_key)
+        linked_key = "[TF-1234](https://hashicorp.atlassian.net/browse/TF-1234)"
+        assert linked_key in state["projects"]
+        assert linked_key in state["projectNotes"]
+        assert state["projectNotes"][linked_key] == "needs attention"
+        assert "TF-1234" not in state["projectNotes"]
+
+    def test_bare_ticket_in_general_note_linkified_on_load(self, diary_dir):
+        """A general note content containing a bare ticket ref is linkified during migration."""
+        week_key = "2026-03-02"
+        pre_linking = {
+            "weekKey": week_key,
+            "projects": {},
+            "projectNotes": {},
+            "notes": [
+                {
+                    "timestamp": "2026-03-02T10:00:00+00:00",
+                    "content": "opened TF-5678 to track",
+                },
+            ],
+        }
+        (diary_dir / f"{week_key}.json").write_text(
+            json.dumps(pre_linking), encoding="utf-8"
+        )
+
+        state = diary_mod._load_state(week_key)
+        assert (
+            "[TF-5678](https://hashicorp.atlassian.net/browse/TF-5678)"
+            in state["notes"][0]["content"]
+        )
+
+    def test_already_linked_key_not_double_linked_on_load(self, diary_dir):
+        """A project key that is already a Markdown link is not double-linked during migration."""
+        week_key = "2026-03-02"
+        linked = "[TF-1234](https://hashicorp.atlassian.net/browse/TF-1234)"
+        already_linked = {
+            "weekKey": week_key,
+            "projects": {linked: "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(
+            json.dumps(already_linked), encoding="utf-8"
+        )
+
+        state = diary_mod._load_state(week_key)
+        assert list(state["projects"].keys()) == [linked]
+
 
 # ---------------------------------------------------------------------------
 # Carry-forward
@@ -1103,11 +1203,17 @@ class TestLinkifyJiraRefs:
         text = "see [TF-34398](https://hashicorp.atlassian.net/browse/TF-34398) for details"
         assert linkify_jira_refs(text) == text
 
-    def test_fewer_than_four_digits_not_matched(self):
+    def test_fewer_than_three_digits_not_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        # TF-123 has only 3 digits — should not be linkified
-        assert linkify_jira_refs("TF-123") == "TF-123"
+        # TF-12 has only 2 digits — should not be linkified
+        assert linkify_jira_refs("TF-12") == "TF-12"
+
+    def test_exactly_three_digits_matched(self):
+        from work_diary_mcp.jira import linkify_jira_refs
+
+        result = linkify_jira_refs("CAG-516")
+        assert result == "[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)"
 
     def test_exactly_four_digits_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
