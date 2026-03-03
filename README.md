@@ -9,9 +9,9 @@ Interact with your diary conversationally via the [Claude CLI](https://docs.anth
 ## Features
 
 - **Project status table** — track projects with a status and an optional inline note per project
-- **General notes** — append timestamped notes throughout the week
+- **General notes** — append notes throughout the week
 - **Carry-forward** — on the first interaction of each new week, non-completed projects and their notes are automatically carried forward from the prior week
-- **Jira auto-linking** — bare Jira ticket references (e.g. `TF-34398`) are automatically converted to Markdown links pointing to `https://hashicorp.atlassian.net/browse/`
+- **Jira auto-linking** — bare Jira ticket references (e.g. `PROJ-1234`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
 
@@ -66,7 +66,7 @@ Add to your Zed `settings.json` (`cmd+,`):
       "command": "/opt/homebrew/bin/uv",
       "args": [
         "--directory",
-        "/Users/amy/work-diary-mcp/python",
+        "/Users/yourname/work-diary-mcp/python",
         "run",
         "work-diary-mcp"
       ],
@@ -107,8 +107,8 @@ to the server in your MCP client config:
   "context_servers": {
     "work-diary": {
       "command": "/opt/homebrew/bin/uv",
-      "args": ["--directory", "/Users/amy/work-diary-mcp/python", "run", "work-diary-mcp"],
-      "env": { "WORK_DIARY_DATA_DIR": "/Users/amy/Documents/work-diary" }
+      "args": ["--directory", "/Users/yourname/work-diary-mcp/python", "run", "work-diary-mcp"],
+      "env": { "WORK_DIARY_DATA_DIR": "/Users/yourname/Documents/work-diary" }
     }
   }
 }
@@ -146,8 +146,8 @@ The path is expanded (so `~` works) and created automatically on first use.
 | `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. |
 | `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. |
 | `rename_project` | Rename a project, preserving its status and note. |
-| `add_note` | Append a timestamped note to the general notes section. |
-| `edit_note` | Replace the content of an existing note by its index number, preserving its timestamp. |
+| `add_note` | Append a note to the general notes section. |
+| `edit_note` | Replace the content of an existing note by its index number. |
 | `delete_note` | Delete a note by its index number. |
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
@@ -159,11 +159,11 @@ The path is expanded (so `~` works) and created automatically on first use.
 
 ## Usage
 
-Just talk naturally — Claude will call the right tool automatically:
+Just talk naturally — your MCP client will call the right tool automatically:
 
 ```
 Update Project Phoenix to On Track
-TFE on Z is now blocked — waiting on the infra team
+Platform Infra is now blocked — waiting on the infra team
 Add a note: had a productive all-hands today, big Q3 roadmap updates
 Show me this week's diary
 What projects am I tracking this week?
@@ -171,15 +171,15 @@ Show me my diary from last week
 Show me my diary from 2 weeks ago
 What weeks do I have diary entries for?
 Remove Project Phoenix from this week
-Clear the note on TFE on Z
-Update [Stacks on TFE](https://jira.example.com/PROJ-123) to At Risk with a note: blocked on dependency
+Clear the note on Platform Infra
+Update [Project Phoenix](https://jira.example.com/PROJ-123) to At Risk with a note: blocked on dependency
 Rename Project Phoenix to Phoenix Rewrite
-Update all my projects: Phoenix Rewrite is On Track, TFE on Z is Blocked, Platform Infra is Done
-Append a note to TFE on Z: dependency resolved, unblocked as of Friday
+Update all my projects: Phoenix Rewrite is On Track, Platform Infra is Blocked, Auth Service is Done
+Append a note to Platform Infra: dependency resolved, unblocked as of Friday
 Edit note 2: corrected — the all-hands covered Q3 and Q4 roadmap
 Delete note 3
-TF-34398 is now On Track
-Add a note: opened TF-34398 and RDPR-1001 to track the rollout
+PROJ-1234 is now On Track
+Add a note: opened PROJ-1234 and PROJ-1235 to track the rollout
 ```
 
 ---
@@ -206,19 +206,18 @@ Well-known statuses are automatically formatted with emoji. Any other string is 
 
 Bare Jira ticket references are automatically converted to Markdown links whenever text is saved to the diary — in project names, inline notes, and general notes. Already-linked references are never double-linked.
 
-**Recognised prefixes:** `TF`, `RDPR`, `TFDN`, `SECGRC`, `IND`, `CAG`
+To configure auto-linking for your Jira instance, update `python/work_diary_mcp/jira.py`:
 
-**Base URL:** `https://hashicorp.atlassian.net/browse/`
+- **`_KNOWN_PREFIXES`** — the tuple of recognised project key prefixes (e.g. `"PROJ"`, `"INFRA"`)
+- **`_BASE_URL`** — your Jira instance's base browse URL (e.g. `"https://jira.example.com/browse/"`)
 
 | You type | Stored as |
 |----------|-----------|
-| `TF-34398` | `[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)` |
-| `blocked by RDPR-1001` | `blocked by [RDPR-1001](https://hashicorp.atlassian.net/browse/RDPR-1001)` |
-| `[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)` | unchanged |
+| `PROJ-1234` | `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` |
+| `blocked by PROJ-1235` | `blocked by [PROJ-1235](https://jira.example.com/browse/PROJ-1235)` |
+| `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` | unchanged |
 
-Ticket keys are always uppercased in the generated link (e.g. `tf-34398` → `TF-34398`). Any prefix or casing variant that doesn't match a known prefix is left as-is.
-
-To add a new recognised prefix, update `_KNOWN_PREFIXES` in `python/work_diary_mcp/jira.py`.
+Ticket keys are always uppercased in the generated link (e.g. `proj-1234` → `PROJ-1234`). Any prefix that doesn't match a known prefix is left as-is.
 
 ---
 
@@ -231,15 +230,14 @@ Each week's diary is stored as two files in `data/`, keyed by the Monday of that
 {
   "weekKey": "2026-03-02",
   "projects": {
-    "[Stacks on TFE](https://hashicorp.atlassian.net/browse/TF-34398)": "On Track"
+    "[Project Phoenix](https://jira.example.com/browse/PROJ-123)": "On Track"
   },
   "projectNotes": {
-    "[Stacks on TFE](https://hashicorp.atlassian.net/browse/TF-34398)": "A few bugs found; [TF-34399](https://hashicorp.atlassian.net/browse/TF-34399) opened to track."
+    "[Project Phoenix](https://jira.example.com/browse/PROJ-123)": "A few bugs found; [PROJ-124](https://jira.example.com/browse/PROJ-124) opened to track."
   },
   "notes": [
     {
-      "timestamp": "2026-03-02T17:21:00+00:00",
-      "content": "Kick off meeting with TPM Joseph Rios for TFE on Z."
+      "content": "Kickoff meeting with TPM for Platform Infra."
     }
   ]
 }
@@ -253,11 +251,11 @@ Each week's diary is stored as two files in `data/`, keyed by the Monday of that
 
 | Project | Status | Notes |
 |---------|--------|-------|
-| [Stacks on TFE](https://hashicorp.atlassian.net/browse/TF-34398) | 🟢 On Track | A few bugs found; [TF-34399](https://hashicorp.atlassian.net/browse/TF-34399) opened to track. |
+| [Project Phoenix](https://jira.example.com/browse/PROJ-123) | 🟢 On Track | A few bugs found; [PROJ-124](https://jira.example.com/browse/PROJ-124) opened to track. |
 
 ## Notes
 
-- **[1] Mon, Mar 2, 11:21 AM** — Kick off meeting with TPM Joseph Rios for TFE on Z.
+- **[1]** Kickoff meeting with TPM for Platform Infra.
 ```
 
 ---
