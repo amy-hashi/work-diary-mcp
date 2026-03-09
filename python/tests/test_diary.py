@@ -432,7 +432,7 @@ class TestMigrateState:
 class TestCarryForward:
     def test_no_prior_week_returns_empty(self, diary_dir):
         result = diary_mod._get_carry_forward_state()
-        assert result == {"projects": {}, "projectNotes": {}}
+        assert result == {"projects": {}, "projectNotes": {}}  # notes are never carried forward
 
     def test_carries_non_completed_projects(self, diary_dir):
         week_key = "2026-03-02"
@@ -446,10 +446,7 @@ class TestCarryForward:
 
         result = diary_mod._get_carry_forward_state()
         assert result["projects"] == {"Alpha": "On Track", "Beta": "Blocked"}
-        assert result["projectNotes"] == {
-            "Alpha": "going well",
-            "Beta": "waiting on infra",
-        }
+        assert result["projectNotes"] == {}  # notes are not carried forward
 
     def test_excludes_completed_projects(self, diary_dir):
         week_key = "2026-03-02"
@@ -470,7 +467,7 @@ class TestCarryForward:
 
         result = diary_mod._get_carry_forward_state()
         assert list(result["projects"].keys()) == ["Active Project"]
-        assert result["projectNotes"] == {"Active Project": "still going"}
+        assert result["projectNotes"] == {}  # notes are not carried forward
 
     def test_completed_project_note_not_carried(self, diary_dir):
         week_key = "2026-03-02"
@@ -604,7 +601,7 @@ class TestGetOrCreateWeekPage:
 
         loaded = json.loads((diary_dir / "2026-03-02.json").read_text())
         assert loaded["projects"] == {"CarriedProject": "At Risk"}
-        assert loaded["projectNotes"] == {"CarriedProject": "still at risk"}
+        assert loaded["projectNotes"] == {}  # notes are not carried forward
 
 
 # ---------------------------------------------------------------------------

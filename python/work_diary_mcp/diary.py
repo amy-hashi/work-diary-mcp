@@ -142,10 +142,13 @@ def _save_state(state: DiaryState) -> None:
 
 
 def _get_carry_forward_state() -> dict:
-    """Return projects/projectNotes from the most recent prior week, if any.
+    """Return projects from the most recent prior week, if any.
 
     Projects whose status is considered complete (Done, Completed, Cancelled,
     etc.) are excluded so they don't clutter the new week's diary.
+
+    Project notes are intentionally not carried forward — they are
+    week-specific context and should start fresh each week.
     """
     weeks = list_week_keys()
     if not weeks:
@@ -153,14 +156,11 @@ def _get_carry_forward_state() -> dict:
     last = _load_state(weeks[-1])
 
     projects: dict[str, str] = {}
-    project_notes: dict[str, str] = {}
     for project, status in last["projects"].items():
         if not is_completed(status):
             projects[project] = status
-            if project in last["projectNotes"]:
-                project_notes[project] = last["projectNotes"][project]
 
-    return {"projects": projects, "projectNotes": project_notes}
+    return {"projects": projects, "projectNotes": {}}
 
 
 # --------------------------------------------------------------------------- #
