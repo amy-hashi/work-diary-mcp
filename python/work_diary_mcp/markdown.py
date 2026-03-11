@@ -5,6 +5,17 @@ from work_diary_mcp.statuses import format_status
 # --------------------------------------------------------------------------- #
 
 
+def _escape_table_cell(value: str) -> str:
+    """Escape Markdown table cell content."""
+    return (
+        value.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\n", "<br>")
+    )
+
+
 def render_diary(state: dict) -> str:
     """
     Render a diary state dict as a Markdown string suitable for
@@ -35,7 +46,12 @@ def render_diary(state: dict) -> str:
     else:
         for project, status in projects.items():
             note = project_notes.get(project, "")
-            lines.append(f"| {project} | {format_status(status)} | {note} |")
+            lines.append(
+                "| "
+                f"{_escape_table_cell(project)} | "
+                f"{_escape_table_cell(format_status(status))} | "
+                f"{_escape_table_cell(note)} |"
+            )
 
     lines.append("")
 
