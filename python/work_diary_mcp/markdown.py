@@ -7,7 +7,13 @@ from work_diary_mcp.statuses import format_status
 
 def _escape_table_cell(value: str) -> str:
     """Escape Markdown table cell content."""
-    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
+    return (
+        value.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\n", "<br>")
+    )
 
 
 def render_diary(state: dict) -> str:
