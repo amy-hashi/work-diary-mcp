@@ -313,6 +313,24 @@ class TestAtomicWriteText:
             assert mode == 0o600
 
 
+class TestWeekLock:
+    def test_windows_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir):
+        if os.name != "nt":
+            pytest.skip("Windows-specific lock file behavior")
+
+        week_key = "2026-03-02"
+        lock_path = diary_dir / f"{week_key}.lock"
+
+        with diary_mod._week_lock(week_key):
+            pass
+        with diary_mod._week_lock(week_key):
+            pass
+        with diary_mod._week_lock(week_key):
+            pass
+
+        assert lock_path.read_bytes() == b"0"
+
+
 # ---------------------------------------------------------------------------
 # Statuses
 # ---------------------------------------------------------------------------

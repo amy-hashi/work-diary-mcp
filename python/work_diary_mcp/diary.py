@@ -199,10 +199,12 @@ def _week_lock(week_key: str):
     if os.name == "nt":
         import msvcrt
 
-        with lock_path.open("a+", encoding="utf-8") as lock_file:
+        with lock_path.open("a+b") as lock_file:
             lock_file.seek(0)
-            lock_file.write("0")
-            lock_file.flush()
+            if lock_file.read(1) == b"":
+                lock_file.seek(0)
+                lock_file.write(b"0")
+                lock_file.flush()
             lock_file.seek(0)
             try:
                 msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
