@@ -35,7 +35,7 @@ def get_week_key(d: date | None = None) -> str:
 def get_week_label(week_key: str) -> str:
     """Return a human-friendly label, e.g. 'Mar 2, 2026'."""
     d = date.fromisoformat(week_key)
-    return d.strftime("%b %-d, %Y")
+    return f"{d.strftime('%b')} {d.day}, {d.year}"
 
 
 def parse_week_key(input_str: str) -> str:
@@ -174,9 +174,12 @@ def _migrate_state(state: DiaryState) -> DiaryState:
 def _atomic_write_text(path: Path, content: str) -> None:
     """Atomically write text content to *path*."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = path.stat().st_mode if path.exists() else None
     fd, temp_path_str = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     temp_path = Path(temp_path_str)
     try:
+        if existing_mode is not None and hasattr(os, "fchmod"):
+            os.fchmod(fd, existing_mode & 0o777)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(content)
             fh.flush()
@@ -190,16 +193,32 @@ def _atomic_write_text(path: Path, content: str) -> None:
 @contextmanager
 def _week_lock(week_key: str):
     """Take an exclusive filesystem lock for a week's diary state."""
-    import fcntl
-
     lock_path = get_data_dir() / f"{week_key}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("w", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    if os.name == "nt":
+        import msvcrt
+
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            lock_file.seek(0)
+            lock_file.write("0")
+            lock_file.flush()
+            lock_file.seek(0)
+            try:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _load_state(week_key: str) -> DiaryState:
