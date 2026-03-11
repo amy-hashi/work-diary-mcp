@@ -10,7 +10,7 @@ Interact with your diary conversationally via the [Claude CLI](https://docs.anth
 
 - **Project status table** — track projects with a status and an optional inline note per project
 - **General notes** — append notes throughout the week
-- **Carry-forward** — on the first interaction of each new week, non-completed projects and their notes are automatically carried forward from the prior week
+- **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
 - **Jira auto-linking** — bare Jira ticket references (e.g. `PROJ-1234`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
@@ -209,7 +209,7 @@ Bare Jira ticket references are automatically converted to Markdown links whenev
 To configure auto-linking for your Jira instance, update `python/work_diary_mcp/jira.py`:
 
 - **`_KNOWN_PREFIXES`** — the tuple of recognised project key prefixes (e.g. `"PROJ"`, `"INFRA"`)
-- **`_BASE_URL`** — your Jira instance's base browse URL (e.g. `"https://jira.example.com/browse/"`)
+- **`JIRA_BASE_URL`** — your Jira instance's base browse URL (e.g. `"https://jira.example.com/browse"`)
 
 | You type | Stored as |
 |----------|-----------|

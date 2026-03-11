@@ -28,8 +28,12 @@ def diary_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     Sets WORK_DIARY_DATA_DIR in the environment so that get_data_dir() in
     config.py picks up the temp path without any module-level patching.
     """
+    import work_diary_mcp.config as config_mod
+
+    config_mod.get_data_dir.cache_clear()
     monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(tmp_path))
-    return tmp_path
+    yield tmp_path
+    config_mod.get_data_dir.cache_clear()
 
 
 def _week_key(d: date) -> str:
@@ -105,6 +109,8 @@ class TestConfig:
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(target))
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
+        config_mod.get_data_dir.cache_clear()
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == target.resolve()
         assert result.is_dir()
@@ -122,6 +128,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == target.resolve()
         assert result.is_dir()
@@ -135,6 +142,9 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
+        config_mod.get_data_dir.cache_clear()
+        config_mod.get_data_dir.cache_clear()
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -150,6 +160,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -165,6 +176,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -178,6 +190,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        config_mod.get_data_dir.cache_clear()
         with pytest.raises(TypeError, match="data_dir"):
             config_mod.get_data_dir()
 
@@ -190,6 +203,7 @@ class TestConfig:
 
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(blocker))
 
+        config_mod.get_data_dir.cache_clear()
         with pytest.raises(ValueError, match="not a directory"):
             config_mod.get_data_dir()
 
@@ -201,6 +215,7 @@ class TestConfig:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "~/diary")
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == (tmp_path / "diary").resolve()
         assert result.is_dir()
@@ -213,6 +228,7 @@ class TestConfig:
         assert not target.exists()
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(target))
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result.is_dir()
 
@@ -225,6 +241,7 @@ class TestConfig:
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "")
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -239,6 +256,7 @@ class TestConfig:
         settings_file.write_text('data_dir = "~/from-settings"\n', encoding="utf-8")
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        config_mod.get_data_dir.cache_clear()
         result = config_mod.get_data_dir()
         assert result == (tmp_path / "from-settings").resolve()
         assert result.is_dir()
@@ -258,6 +276,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        config_mod.get_data_dir.cache_clear()
         with pytest.raises(ValueError, match="not a directory"):
             config_mod.get_data_dir()
 
@@ -513,20 +532,21 @@ class TestGetDiaryMarkdown:
         assert isinstance(md, str)
         assert "Alpha" in md
 
-    def test_writes_md_file(self, diary_dir):
+    def test_does_not_write_md_file(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(week_key, "Alpha", "On Track")
-        diary_mod.get_diary_markdown(week_key)
         md_file = diary_dir / f"{week_key}.md"
-        assert md_file.exists()
-        assert "Alpha" in md_file.read_text(encoding="utf-8")
+        assert not md_file.exists()
 
-    def test_md_file_content_matches_return_value(self, diary_dir):
+        md = diary_mod.get_diary_markdown(week_key)
+
+        assert isinstance(md, str)
+        assert not md_file.exists()
+
+    def test_returns_current_rendered_markdown(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="stuck")
         md = diary_mod.get_diary_markdown(week_key)
-        md_file = diary_dir / f"{week_key}.md"
-        assert md_file.read_text(encoding="utf-8") == md
+        assert "| Alpha | 🔴 Blocked | stuck |" in md
 
 
 class TestListProjects:
