@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tomllib
+from functools import lru_cache
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
@@ -22,6 +23,7 @@ _BUILTIN_DEFAULT = Path(__file__).parent.parent.parent / "data"
 # --------------------------------------------------------------------------- #
 
 
+@lru_cache(maxsize=1)
 def get_data_dir() -> Path:
     """Return the resolved, validated data directory.
 

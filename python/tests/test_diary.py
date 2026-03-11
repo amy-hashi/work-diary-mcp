@@ -9,8 +9,10 @@ and never touch real diary files.
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
+from stat import S_IMODE
 from unittest.mock import patch
 
 import pytest
@@ -28,8 +30,12 @@ def diary_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     Sets WORK_DIARY_DATA_DIR in the environment so that get_data_dir() in
     config.py picks up the temp path without any module-level patching.
     """
+    import work_diary_mcp.config as config_mod
+
+    config_mod.get_data_dir.cache_clear()
     monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(tmp_path))
-    return tmp_path
+    yield tmp_path
+    config_mod.get_data_dir.cache_clear()
 
 
 def _week_key(d: date) -> str:
@@ -57,6 +63,11 @@ class TestGetMondayOf:
     def test_friday_returns_prior_monday(self):
         d = date(2026, 3, 6)  # Friday
         assert _monday(d) == date(2026, 3, 2)
+
+
+class TestGetWeekLabel:
+    def test_formats_label_without_platform_specific_strftime_directives(self):
+        assert diary_mod.get_week_label("2026-03-02") == "Mar 2, 2026"
 
 
 class TestGetWeekKey:
@@ -97,6 +108,10 @@ class TestParseWeekKey:
 
 
 class TestConfig:
+    @staticmethod
+    def _clear_cache(config_mod) -> None:
+        config_mod.get_data_dir.cache_clear()
+
     def test_env_var_takes_precedence(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """WORK_DIARY_DATA_DIR overrides everything else."""
         import work_diary_mcp.config as config_mod
@@ -105,6 +120,7 @@ class TestConfig:
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(target))
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == target.resolve()
         assert result.is_dir()
@@ -122,6 +138,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == target.resolve()
         assert result.is_dir()
@@ -135,6 +152,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -150,6 +168,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -165,6 +184,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -178,6 +198,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        self._clear_cache(config_mod)
         with pytest.raises(TypeError, match="data_dir"):
             config_mod.get_data_dir()
 
@@ -190,6 +211,7 @@ class TestConfig:
 
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(blocker))
 
+        self._clear_cache(config_mod)
         with pytest.raises(ValueError, match="not a directory"):
             config_mod.get_data_dir()
 
@@ -201,6 +223,7 @@ class TestConfig:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "~/diary")
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == (tmp_path / "diary").resolve()
         assert result.is_dir()
@@ -213,6 +236,7 @@ class TestConfig:
         assert not target.exists()
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(target))
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result.is_dir()
 
@@ -225,6 +249,7 @@ class TestConfig:
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "")
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -239,6 +264,7 @@ class TestConfig:
         settings_file.write_text('data_dir = "~/from-settings"\n', encoding="utf-8")
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == (tmp_path / "from-settings").resolve()
         assert result.is_dir()
@@ -258,8 +284,51 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
+        self._clear_cache(config_mod)
         with pytest.raises(ValueError, match="not a directory"):
             config_mod.get_data_dir()
+
+
+class TestAtomicWriteText:
+    def test_preserves_existing_file_mode(self, diary_dir):
+        target = diary_dir / "sample.txt"
+        target.write_text("original", encoding="utf-8")
+        target.chmod(0o644)
+
+        diary_mod._atomic_write_text(target, "updated")
+
+        assert target.read_text(encoding="utf-8") == "updated"
+        assert S_IMODE(target.stat().st_mode) == 0o644
+
+    def test_new_file_keeps_secure_default_permissions(self, diary_dir):
+        target = diary_dir / "new-file.txt"
+
+        diary_mod._atomic_write_text(target, "created")
+
+        assert target.read_text(encoding="utf-8") == "created"
+        mode = S_IMODE(target.stat().st_mode)
+        if os.name == "nt":
+            assert mode & 0o777 == mode
+        else:
+            assert mode == 0o600
+
+
+class TestWeekLock:
+    def test_windows_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir):
+        if os.name != "nt":
+            pytest.skip("Windows-specific lock file behavior")
+
+        week_key = "2026-03-02"
+        lock_path = diary_dir / f"{week_key}.lock"
+
+        with diary_mod._week_lock(week_key):
+            pass
+        with diary_mod._week_lock(week_key):
+            pass
+        with diary_mod._week_lock(week_key):
+            pass
+
+        assert lock_path.read_bytes() == b"0"
 
 
 # ---------------------------------------------------------------------------
@@ -513,20 +582,21 @@ class TestGetDiaryMarkdown:
         assert isinstance(md, str)
         assert "Alpha" in md
 
-    def test_writes_md_file(self, diary_dir):
+    def test_does_not_write_md_file(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(week_key, "Alpha", "On Track")
-        diary_mod.get_diary_markdown(week_key)
         md_file = diary_dir / f"{week_key}.md"
-        assert md_file.exists()
-        assert "Alpha" in md_file.read_text(encoding="utf-8")
+        assert not md_file.exists()
 
-    def test_md_file_content_matches_return_value(self, diary_dir):
+        md = diary_mod.get_diary_markdown(week_key)
+
+        assert isinstance(md, str)
+        assert not md_file.exists()
+
+    def test_returns_current_rendered_markdown(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="stuck")
         md = diary_mod.get_diary_markdown(week_key)
-        md_file = diary_dir / f"{week_key}.md"
-        assert md_file.read_text(encoding="utf-8") == md
+        assert "| Alpha | 🔴 Blocked | stuck |" in md
 
 
 class TestListProjects:
@@ -1094,6 +1164,19 @@ class TestMarkdownRendering:
         }
         md = render_diary(state)
         assert "waiting on infra" in md
+
+    def test_windows_newlines_in_table_cells_are_normalized(self, diary_dir):
+        from work_diary_mcp.markdown import render_diary
+
+        state = {
+            "weekKey": "2026-03-02",
+            "projects": {"Alpha": "Blocked"},
+            "projectNotes": {"Alpha": "line one\r\nline two"},
+            "notes": [],
+        }
+        md = render_diary(state)
+        assert "line one<br>line two" in md
+        assert "\r" not in md
 
 
 # ---------------------------------------------------------------------------

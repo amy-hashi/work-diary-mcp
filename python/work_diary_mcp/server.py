@@ -296,8 +296,8 @@ def get_diary(
 ) -> str:
     """Retrieve the full Markdown content of a week's work diary.
 
-    Returns the project status table and all notes. Also writes the
-    rendered Markdown file to disk. Defaults to the current week.
+    Returns the project status table and all notes. Renders the Markdown
+    in memory without writing any files. Defaults to the current week.
     """
     try:
         week_key = parse_week_key(date) if date else get_week_key()
