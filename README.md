@@ -11,7 +11,7 @@ Interact with your diary conversationally via the [Claude CLI](https://docs.anth
 - **Project status table** — track projects with a status and an optional inline note per project
 - **General notes** — append notes throughout the week
 - **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
-- **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `TF-34398` or `RDPR-1234`) are automatically converted to Markdown links
+- **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
@@ -189,8 +189,8 @@ Update all my projects: Phoenix Rewrite is On Track, Platform Infra is Blocked, 
 Append a note to Platform Infra: dependency resolved, unblocked as of Friday
 Edit note 2: corrected — the all-hands covered Q3 and Q4 roadmap
 Delete note 3
-TF-34398 is now On Track
-Add a note: opened TF-34398 and RDPR-1234 to track the rollout
+PROJ-1234 is now On Track
+Add a note: opened PROJ-1234 and INFRA-5678 to track the rollout
 ```
 
 ---
@@ -223,24 +223,24 @@ Bare Jira ticket references are automatically converted to Markdown links whenev
 
 The current default Jira base URL is:
 
-- `https://hashicorp.atlassian.net/browse`
+- `https://jira.example.com/browse`
 
-The currently supported ticket prefixes are:
+Example ticket prefixes are:
 
-- `TF`
-- `RDPR`
-- `TFDN`
-- `SECGRC`
-- `IND`
-- `CAG`
+- `PROJ`
+- `INFRA`
+- `ENG`
+- `OPS`
+- `SEC`
+- `DATA`
 
 Examples:
 
 | You type | Stored as |
 |----------|-----------|
-| `TF-34398` | `[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)` |
-| `blocked by RDPR-1234` | `blocked by [RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)` |
-| `[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)` | unchanged |
+| `PROJ-1234` | `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` |
+| `blocked by INFRA-5678` | `blocked by [INFRA-5678](https://jira.example.com/browse/INFRA-5678)` |
+| `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` | unchanged |
 
 Ticket keys are uppercased in generated links. References that do not match a supported prefix are left as-is.
 
