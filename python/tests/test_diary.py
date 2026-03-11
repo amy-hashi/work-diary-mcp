@@ -9,6 +9,7 @@ and never touch real diary files.
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
 from stat import S_IMODE
@@ -305,7 +306,11 @@ class TestAtomicWriteText:
         diary_mod._atomic_write_text(target, "created")
 
         assert target.read_text(encoding="utf-8") == "created"
-        assert S_IMODE(target.stat().st_mode) == 0o600
+        mode = S_IMODE(target.stat().st_mode)
+        if os.name == "nt":
+            assert mode & 0o777 == mode
+        else:
+            assert mode == 0o600
 
 
 # ---------------------------------------------------------------------------
@@ -1141,6 +1146,19 @@ class TestMarkdownRendering:
         }
         md = render_diary(state)
         assert "waiting on infra" in md
+
+    def test_windows_newlines_in_table_cells_are_normalized(self, diary_dir):
+        from work_diary_mcp.markdown import render_diary
+
+        state = {
+            "weekKey": "2026-03-02",
+            "projects": {"Alpha": "Blocked"},
+            "projectNotes": {"Alpha": "line one\r\nline two"},
+            "notes": [],
+        }
+        md = render_diary(state)
+        assert "line one<br>line two" in md
+        assert "\r" not in md
 
 
 # ---------------------------------------------------------------------------
