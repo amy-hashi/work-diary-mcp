@@ -11,15 +11,16 @@ Interact with your diary conversationally via the [Claude CLI](https://docs.anth
 - **Project status table** — track projects with a status and an optional inline note per project
 - **General notes** — append notes throughout the week
 - **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
-- **Jira auto-linking** — bare Jira ticket references (e.g. `PROJ-1234`) are automatically converted to Markdown links
+- **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `TF-34398` or `RDPR-1234`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
+- **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 
 ---
 
 ## Project Structure
 
-```
+```text
 work-diary-mcp/
 ├── .gitignore
 ├── README.md
@@ -30,9 +31,13 @@ work-diary-mcp/
     ├── README.md                  # Python-specific setup details
     ├── pyproject.toml
     ├── uv.lock
+    ├── tests/
+    │   ├── __init__.py
+    │   └── test_diary.py
     └── work_diary_mcp/
+        ├── __init__.py
         ├── config.py              # Data directory resolution (env var / settings file)
-        ├── diary.py               # State management, week helpers, public API
+        ├── diary.py               # State management, week helpers, persistence
         ├── jira.py                # Jira ticket auto-linking
         ├── markdown.py            # Markdown renderer
         ├── server.py              # FastMCP server and tool definitions
@@ -46,7 +51,9 @@ work-diary-mcp/
 ### Prerequisites
 
 - Python 3.11+
-- [`uv`](https://docs.astral.sh/uv/) — install via Homebrew: `brew install uv`
+- [`uv`](https://docs.astral.sh/uv/) — install it using the instructions for your platform in the official docs: <https://docs.astral.sh/uv/getting-started/installation/>
+
+This project is intended to work on both **macOS** and **Windows**. The examples below use Unix-style paths where needed; on Windows, use the equivalent local paths and `uv` executable location for your environment.
 
 ### Install dependencies
 
@@ -57,13 +64,13 @@ uv sync
 
 ### Register with Zed
 
-Add to your Zed `settings.json` (`cmd+,`):
+Add to your Zed `settings.json` (`cmd+,`). This example shows a macOS-style path for `uv`; on Windows, use the path to `uv.exe` or another command that resolves to `uv` in your environment:
 
 ```json
 {
   "context_servers": {
     "work-diary": {
-      "command": "/opt/homebrew/bin/uv",
+      "command": "/path/to/uv",
       "args": [
         "--directory",
         "/Users/yourname/work-diary-mcp/python",
@@ -78,8 +85,10 @@ Add to your Zed `settings.json` (`cmd+,`):
 
 ### Register with Claude CLI
 
+Use whatever `uv` executable path is correct for your platform:
+
 ```bash
-claude mcp add work-diary /opt/homebrew/bin/uv \
+claude mcp add work-diary /path/to/uv \
   --directory $HOME/work-diary-mcp/python run work-diary-mcp
 ```
 
@@ -87,8 +96,7 @@ claude mcp add work-diary /opt/homebrew/bin/uv \
 
 ## Configuration
 
-By default, diary files are written to `data/` inside the repository. You can
-point the server at any directory using either of the methods below.
+By default, diary files are written to `data/` inside the repository. You can point the server at any directory using either of the methods below.
 
 ### Option 1 — Environment variable
 
@@ -98,15 +106,15 @@ Set `WORK_DIARY_DATA_DIR` to an absolute (or `~`-prefixed) path:
 export WORK_DIARY_DATA_DIR=~/Documents/work-diary
 ```
 
-To make it permanent, add the export to your shell profile and pass it through
-to the server in your MCP client config:
+To make it permanent, add the export to your shell profile and pass it through to the server in your MCP client config:
 
 **Zed** — add an `env` entry:
+
 ```json
 {
   "context_servers": {
     "work-diary": {
-      "command": "/opt/homebrew/bin/uv",
+      "command": "/path/to/uv",
       "args": ["--directory", "/Users/yourname/work-diary-mcp/python", "run", "work-diary-mcp"],
       "env": { "WORK_DIARY_DATA_DIR": "/Users/yourname/Documents/work-diary" }
     }
@@ -115,11 +123,14 @@ to the server in your MCP client config:
 ```
 
 **Claude CLI** — add the env var when registering:
+
 ```bash
-claude mcp add work-diary /opt/homebrew/bin/uv \
+claude mcp add work-diary /path/to/uv \
   --directory $HOME/work-diary-mcp/python run work-diary-mcp \
   --env WORK_DIARY_DATA_DIR=$HOME/Documents/work-diary
 ```
+
+On Windows, use Windows-style paths for both the `uv` executable and `WORK_DIARY_DATA_DIR`.
 
 ### Option 2 — Settings file
 
@@ -129,7 +140,7 @@ Create `~/.config/work-diary/settings.toml` with a `data_dir` key:
 data_dir = "~/Documents/work-diary"
 ```
 
-The path is expanded (so `~` works) and created automatically on first use.
+The path is expanded automatically and the directory is created on first use.
 
 ### Resolution order
 
@@ -161,7 +172,7 @@ The path is expanded (so `~` works) and created automatically on first use.
 
 Just talk naturally — your MCP client will call the right tool automatically:
 
-```
+```text
 Update Project Phoenix to On Track
 Platform Infra is now blocked — waiting on the infra team
 Add a note: had a productive all-hands today, big Q3 roadmap updates
@@ -178,8 +189,8 @@ Update all my projects: Phoenix Rewrite is On Track, Platform Infra is Blocked, 
 Append a note to Platform Infra: dependency resolved, unblocked as of Friday
 Edit note 2: corrected — the all-hands covered Q3 and Q4 roadmap
 Delete note 3
-PROJ-1234 is now On Track
-Add a note: opened PROJ-1234 and PROJ-1235 to track the rollout
+TF-34398 is now On Track
+Add a note: opened TF-34398 and RDPR-1234 to track the rollout
 ```
 
 ---
@@ -194,11 +205,15 @@ Well-known statuses are automatically formatted with emoji. Any other string is 
 | At Risk | 🟡 At Risk |
 | Blocked | 🔴 Blocked |
 | Done | ✅ Done |
-| Complete / Completed | ✅ Complete |
+| Complete | ✅ Complete |
+| Completed | ✅ Completed |
 | In Progress | 🔵 In Progress |
 | Not Started | ⚪ Not Started |
-| Cancelled / Canceled | ⛔ Cancelled |
+| Cancelled | ⛔ Cancelled |
+| Canceled | ⛔ Canceled |
 | Paused | ⏸️ Paused |
+
+Terminal statuses are used to decide what should not be carried forward into a new week.
 
 ---
 
@@ -206,26 +221,42 @@ Well-known statuses are automatically formatted with emoji. Any other string is 
 
 Bare Jira ticket references are automatically converted to Markdown links whenever text is saved to the diary — in project names, inline notes, and general notes. Already-linked references are never double-linked.
 
-To configure auto-linking for your Jira instance, update `python/work_diary_mcp/jira.py`:
+The current default Jira base URL is:
 
-- **`_KNOWN_PREFIXES`** — the tuple of recognised project key prefixes (e.g. `"PROJ"`, `"INFRA"`)
-- **`JIRA_BASE_URL`** — your Jira instance's base browse URL (e.g. `"https://jira.example.com/browse"`)
+- `https://hashicorp.atlassian.net/browse`
+
+The currently supported ticket prefixes are:
+
+- `TF`
+- `RDPR`
+- `TFDN`
+- `SECGRC`
+- `IND`
+- `CAG`
+
+Examples:
 
 | You type | Stored as |
 |----------|-----------|
-| `PROJ-1234` | `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` |
-| `blocked by PROJ-1235` | `blocked by [PROJ-1235](https://jira.example.com/browse/PROJ-1235)` |
-| `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` | unchanged |
+| `TF-34398` | `[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)` |
+| `blocked by RDPR-1234` | `blocked by [RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)` |
+| `[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)` | unchanged |
 
-Ticket keys are always uppercased in the generated link (e.g. `proj-1234` → `PROJ-1234`). Any prefix that doesn't match a known prefix is left as-is.
+Ticket keys are uppercased in generated links. References that do not match a supported prefix are left as-is.
+
+To customize auto-linking for your Jira instance, update `python/work_diary_mcp/jira.py`:
+
+- **`_KNOWN_PREFIXES`** — the tuple of recognised project key prefixes
+- **`JIRA_BASE_URL`** — your Jira instance's base browse URL
 
 ---
 
 ## Data Format
 
-Each week's diary is stored as two files in `data/`, keyed by the Monday of that week:
+Each week's diary is stored as two files in the configured data directory, keyed by the Monday of that week.
 
-**`data/2026-03-02.json`** — source of truth:
+**`YYYY-MM-DD.json`** — source of truth:
+
 ```json
 {
   "weekKey": "2026-03-02",
@@ -243,7 +274,8 @@ Each week's diary is stored as two files in `data/`, keyed by the Monday of that
 }
 ```
 
-**`data/2026-03-02.md`** — rendered output:
+**`YYYY-MM-DD.md`** — rendered output:
+
 ```markdown
 # Work Diary — Week of Mar 2, 2026
 
@@ -262,7 +294,8 @@ Each week's diary is stored as two files in `data/`, keyed by the Monday of that
 
 ## Data Location
 
-Diary files are stored in the configured data directory (see [Configuration](#configuration) above).
+Diary files are stored in the configured data directory described in [Configuration](#configuration).
+
 Each week is represented by two files keyed on the Monday of that week:
 
 - `YYYY-MM-DD.json` — source of truth (raw state)
@@ -272,6 +305,23 @@ Each week is represented by two files keyed on the Monday of that week:
 
 ## Carry-Forward Behaviour
 
-On the first interaction of each new week (Monday onward), a fresh diary page is created automatically. Projects and their inline notes are copied forward from the most recent prior week — so you never start from a blank slate. Status values carry forward unchanged; update them as the week progresses.
+On the first interaction of each new week, a fresh diary page is created automatically. Non-terminal projects are copied forward from the most recent prior week so you never start from a blank slate.
 
-Projects with a terminal status (**Done**, **Complete**, **Completed**, **Cancelled**, **Canceled**) are **not** carried forward. Finished work stays in the week it was completed and won't clutter the new week's diary.
+Carry-forward behavior is currently:
+
+- **Project statuses are carried forward**
+- **Project inline notes are not carried forward**
+- **General notes are not carried forward**
+- **Completed or cancelled projects are not carried forward**
+
+Projects with a terminal status such as **Done**, **Complete**, **Completed**, **Cancelled**, or **Canceled** stay in the week they were finished and will not clutter the new week's diary.
+
+---
+
+## Testing
+
+From `python/`:
+
+```bash
+uv run --group dev pytest -v
+```

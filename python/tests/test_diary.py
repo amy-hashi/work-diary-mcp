@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path
+from stat import S_IMODE
 from unittest.mock import patch
 
 import pytest
@@ -63,6 +64,11 @@ class TestGetMondayOf:
         assert _monday(d) == date(2026, 3, 2)
 
 
+class TestGetWeekLabel:
+    def test_formats_label_without_platform_specific_strftime_directives(self):
+        assert diary_mod.get_week_label("2026-03-02") == "Mar 2, 2026"
+
+
 class TestGetWeekKey:
     def test_returns_iso_string(self):
         key = diary_mod.get_week_key(date(2026, 3, 4))  # Wednesday
@@ -101,6 +107,10 @@ class TestParseWeekKey:
 
 
 class TestConfig:
+    @staticmethod
+    def _clear_cache(config_mod) -> None:
+        config_mod.get_data_dir.cache_clear()
+
     def test_env_var_takes_precedence(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """WORK_DIARY_DATA_DIR overrides everything else."""
         import work_diary_mcp.config as config_mod
@@ -109,8 +119,7 @@ class TestConfig:
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(target))
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
-        config_mod.get_data_dir.cache_clear()
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == target.resolve()
         assert result.is_dir()
@@ -128,7 +137,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == target.resolve()
         assert result.is_dir()
@@ -142,9 +151,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
-        config_mod.get_data_dir.cache_clear()
-        config_mod.get_data_dir.cache_clear()
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -160,7 +167,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -176,7 +183,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -190,7 +197,7 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         with pytest.raises(TypeError, match="data_dir"):
             config_mod.get_data_dir()
 
@@ -203,7 +210,7 @@ class TestConfig:
 
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(blocker))
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         with pytest.raises(ValueError, match="not a directory"):
             config_mod.get_data_dir()
 
@@ -215,7 +222,7 @@ class TestConfig:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "~/diary")
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == (tmp_path / "diary").resolve()
         assert result.is_dir()
@@ -228,7 +235,7 @@ class TestConfig:
         assert not target.exists()
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(target))
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result.is_dir()
 
@@ -241,7 +248,7 @@ class TestConfig:
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "")
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == config_mod._BUILTIN_DEFAULT.resolve()
 
@@ -256,7 +263,7 @@ class TestConfig:
         settings_file.write_text('data_dir = "~/from-settings"\n', encoding="utf-8")
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
         assert result == (tmp_path / "from-settings").resolve()
         assert result.is_dir()
@@ -276,9 +283,29 @@ class TestConfig:
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
-        config_mod.get_data_dir.cache_clear()
+        self._clear_cache(config_mod)
         with pytest.raises(ValueError, match="not a directory"):
             config_mod.get_data_dir()
+
+
+class TestAtomicWriteText:
+    def test_preserves_existing_file_mode(self, diary_dir):
+        target = diary_dir / "sample.txt"
+        target.write_text("original", encoding="utf-8")
+        target.chmod(0o644)
+
+        diary_mod._atomic_write_text(target, "updated")
+
+        assert target.read_text(encoding="utf-8") == "updated"
+        assert S_IMODE(target.stat().st_mode) == 0o644
+
+    def test_new_file_keeps_secure_default_permissions(self, diary_dir):
+        target = diary_dir / "new-file.txt"
+
+        diary_mod._atomic_write_text(target, "created")
+
+        assert target.read_text(encoding="utf-8") == "created"
+        assert S_IMODE(target.stat().st_mode) == 0o600
 
 
 # ---------------------------------------------------------------------------
