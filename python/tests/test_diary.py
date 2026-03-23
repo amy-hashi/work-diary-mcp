@@ -21,6 +21,7 @@ import pytest
 # Helpers to point the module at a temp directory
 # ---------------------------------------------------------------------------
 import work_diary_mcp.diary as diary_mod
+import work_diary_mcp.server as server_mod
 
 
 @pytest.fixture()
@@ -269,6 +270,37 @@ class TestConfig:
         assert result == (tmp_path / "from-settings").resolve()
         assert result.is_dir()
 
+    def test_windows_settings_file_uses_appdata(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """On Windows, the default settings file lives under %APPDATA%."""
+        import work_diary_mcp.config as config_mod
+
+        appdata = tmp_path / "AppData" / "Roaming"
+        monkeypatch.setenv("APPDATA", str(appdata))
+
+        with patch.object(config_mod.os, "name", "nt"):
+            result = config_mod._default_settings_file()
+
+        assert result.parts[-2:] == ("work-diary", "settings.toml")
+
+    def test_windows_settings_file_falls_back_when_appdata_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """On Windows, the settings path falls back to HOME/AppData/Roaming when APPDATA is unset."""
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("APPDATA", raising=False)
+
+        with (
+            patch.object(config_mod.os, "name", "nt"),
+            patch.object(config_mod.Path, "home", return_value=tmp_path),
+        ):
+            result = config_mod._default_settings_file()
+
+        assert result.parts[-4:] == ("AppData", "Roaming", "work-diary", "settings.toml")
+
     def test_settings_file_path_exists_as_file_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
@@ -453,6 +485,103 @@ class TestHistoricalWeekWrites:
             "projects": {"Past Project": "On Track"},
             "projectNotes": {},
         }
+
+
+class TestServerWriteTools:
+    def test_resolve_target_page_uses_current_week_helper_for_current_week_iso(self, diary_dir):
+        current_week = diary_mod.get_week_key()
+        expected_page = {
+            "week_key": current_week,
+            "week_label": diary_mod.get_week_label(current_week),
+            "is_new": False,
+        }
+
+        with (
+            patch.object(
+                server_mod, "get_or_create_week_page", return_value=expected_page
+            ) as current_mock,
+            patch.object(server_mod, "get_or_create_page_for_week") as historical_mock,
+        ):
+            page = server_mod._resolve_target_page(current_week)
+
+        assert page == expected_page
+        current_mock.assert_called_once_with()
+        historical_mock.assert_not_called()
+
+    def test_resolve_target_page_uses_historical_helper_for_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+        expected_page = {
+            "week_key": target_week,
+            "week_label": diary_mod.get_week_label(target_week),
+            "is_new": True,
+        }
+
+        with (
+            patch.object(server_mod, "get_or_create_week_page") as current_mock,
+            patch.object(
+                server_mod, "get_or_create_page_for_week", return_value=expected_page
+            ) as historical_mock,
+        ):
+            page = server_mod._resolve_target_page("last week")
+
+        assert page == expected_page
+        current_mock.assert_not_called()
+        historical_mock.assert_called_once_with(target_week)
+
+    def test_add_note_tool_targets_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+
+        with (
+            patch.object(server_mod, "get_or_create_page_for_week") as page_mock,
+            patch.object(server_mod, "add_note") as add_note_mock,
+        ):
+            page_mock.return_value = {
+                "week_key": target_week,
+                "week_label": diary_mod.get_week_label(target_week),
+                "is_new": True,
+            }
+
+            result = server_mod.add_note_tool(
+                "Wrapped up validation work.",
+                date="last week",
+            )
+
+        page_mock.assert_called_once_with(target_week)
+        add_note_mock.assert_called_once_with(target_week, "Wrapped up validation work.")
+        assert "Created new diary" in result
+        assert diary_mod.get_week_label(target_week) in result
+
+    def test_update_project_status_tool_targets_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+
+        with (
+            patch.object(server_mod, "get_or_create_page_for_week") as page_mock,
+            patch.object(server_mod, "update_project_status") as update_mock,
+        ):
+            page_mock.return_value = {
+                "week_key": target_week,
+                "week_label": diary_mod.get_week_label(target_week),
+                "is_new": False,
+            }
+
+            result = server_mod.update_project_status_tool(
+                "Stacks on TFE",
+                "Blocked",
+                note="Waiting on dependency.",
+                append_note=False,
+                date="last week",
+            )
+
+        page_mock.assert_called_once_with(target_week)
+        update_mock.assert_called_once_with(
+            target_week,
+            "Stacks on TFE",
+            "Blocked",
+            "Waiting on dependency.",
+            False,
+        )
+        assert "Stacks on TFE" in result
+        assert diary_mod.get_week_label(target_week) in result
 
 
 # ---------------------------------------------------------------------------
