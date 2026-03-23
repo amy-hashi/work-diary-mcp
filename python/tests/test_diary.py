@@ -153,7 +153,7 @@ class TestConfig:
 
         self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
-        assert result == target.resolve()
+        assert result == target.expanduser().resolve()
         assert result.is_dir()
 
     def test_builtin_default_used_when_nothing_configured(
@@ -232,13 +232,11 @@ class TestConfig:
         """A path starting with ~ is expanded correctly."""
         import work_diary_mcp.config as config_mod
 
-        # Point home to tmp_path so ~/diary resolves to tmp_path/diary
-        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "~/diary")
 
         self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
-        assert result == (tmp_path / "diary").resolve()
+        assert result == Path("~/diary").expanduser().resolve()
         assert result.is_dir()
 
     def test_get_data_dir_creates_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -270,7 +268,6 @@ class TestConfig:
         """A ~ in settings.toml data_dir is expanded correctly."""
         import work_diary_mcp.config as config_mod
 
-        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
 
         settings_file = tmp_path / "settings.toml"
@@ -279,7 +276,7 @@ class TestConfig:
 
         self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
-        assert result == (tmp_path / "from-settings").resolve()
+        assert result == Path("~/from-settings").expanduser().resolve()
         assert result.is_dir()
 
     def test_windows_settings_file_uses_appdata(
@@ -329,6 +326,9 @@ class TestConfig:
         settings_file.write_text(f'data_dir = "{blocker}"\n', encoding="utf-8")
 
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.delenv("USERPROFILE", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
 
         self._clear_cache(config_mod)
@@ -342,10 +342,15 @@ class TestAtomicWriteText:
         target.write_text("original", encoding="utf-8")
         target.chmod(0o644)
 
+        original_mode = S_IMODE(target.stat().st_mode)
         diary_mod._atomic_write_text(target, "updated")
 
         assert target.read_text(encoding="utf-8") == "updated"
-        assert S_IMODE(target.stat().st_mode) == 0o644
+        updated_mode = S_IMODE(target.stat().st_mode)
+        if os.name == "nt":
+            assert updated_mode & 0o777 == original_mode & 0o777
+        else:
+            assert updated_mode == original_mode
 
     def test_new_file_keeps_secure_default_permissions(self, diary_dir):
         target = diary_dir / "new-file.txt"
@@ -1058,7 +1063,7 @@ class TestMigrateState:
     def test_already_linked_key_not_double_linked_on_load(self, diary_dir):
         """A project key that is already a Markdown link is not double-linked during migration."""
         week_key = "2026-03-02"
-        linked = "[TF-1234](https://hashicorp.atlassian.net/browse/TF-1234)"
+        linked = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
         already_linked = {
             "weekKey": week_key,
             "projects": {linked: "On Track"},
@@ -1068,6 +1073,8 @@ class TestMigrateState:
         (diary_dir / f"{week_key}.json").write_text(json.dumps(already_linked), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
+        assert linked in state["projects"]
+        assert state["projects"][linked] == "On Track"
         assert list(state["projects"].keys()) == [linked]
 
 
@@ -1301,7 +1308,7 @@ class TestUpdateProjectStatus:
             week_key, "Alpha", "Blocked", note="second", append_note=True
         )
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projectNotes"]["Alpha"] == "first — second"
+        assert state["projectNotes"]["Alpha"] == "first" + " — " + "second"
 
     def test_append_note_no_prior_note(self, diary_dir):
         week_key = "2026-03-02"
@@ -1437,7 +1444,7 @@ class TestBulkUpdateProjects:
             ],
         )
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projectNotes"]["Alpha"] == "first — second"
+        assert state["projectNotes"]["Alpha"] == "first" + " — " + "second"
 
     def test_returns_result_strings(self, diary_dir):
         week_key = "2026-03-02"
@@ -1818,8 +1825,8 @@ class TestLinkifyJiraRefs:
     def test_fewer_than_three_digits_not_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        # TF-12 has only 2 digits — should not be linkified
-        assert linkify_jira_refs("TF-12") == "TF-12"
+        # PROJ-12 has only 2 digits — should not be linkified
+        assert linkify_jira_refs("PROJ-12") == "PROJ-12"
 
     def test_exactly_three_digits_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
@@ -1890,7 +1897,7 @@ class TestJiraLinkificationIntegration:
 
     def test_already_linked_project_name_unchanged(self, diary_dir):
         week_key = "2026-03-02"
-        linked = "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
+        linked = "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
         diary_mod.update_project_status(week_key, linked, "On Track")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert linked in state["projects"]
@@ -1898,7 +1905,7 @@ class TestJiraLinkificationIntegration:
 
     def test_already_linked_note_unchanged(self, diary_dir):
         week_key = "2026-03-02"
-        linked = "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
+        linked = "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
         diary_mod.update_project_status(week_key, "Alpha", "Blocked", note=linked)
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert state["projectNotes"]["Alpha"] == linked
