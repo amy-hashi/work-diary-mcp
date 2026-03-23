@@ -10,6 +10,7 @@ from work_diary_mcp.diary import (
     delete_note,
     edit_note,
     get_diary_markdown,
+    get_or_create_page_for_week,
     get_or_create_week_page,
     get_week_key,
     get_week_label,
@@ -45,6 +46,10 @@ mcp = FastMCP(
         "or an unfinished message (e.g. trailing off, missing context, ambiguous "
         "references like 'that thing' or 'the issue'), ask the user a focused "
         "clarifying question before saving. Do not guess or fill in missing details.\n\n"
+        "## Target week\n\n"
+        "Write operations default to the current week, but may also target a specific "
+        "week when the user says things like 'last week', '2 weeks ago', or provides "
+        "an ISO date such as '2026-03-02'.\n\n"
         "## Timestamps\n\n"
         "Do not add timestamps to notes automatically. Only include a date or time in "
         "a note if the user explicitly mentions one."
@@ -57,7 +62,20 @@ mcp = FastMCP(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+def _resolve_target_page(date: str | None) -> dict:
+    """Return the target diary page for a write operation."""
+    if not date:
+        return get_or_create_week_page()
+
+    week_key = parse_week_key(date)
+    return (
+        get_or_create_week_page()
+        if week_key == get_week_key()
+        else get_or_create_page_for_week(week_key)
+    )
+
+
+@mcp.tool(annotations={"readOnlyHint": False})
 def update_project_status_tool(
     project: Annotated[str, "The name of the project to update, e.g. 'Project Phoenix'"],
     status: Annotated[
@@ -76,8 +94,14 @@ def update_project_status_tool(
         "rather than replacing it. Has no effect when no prior note exists. "
         "Defaults to False.",
     ] = False,
+    date: Annotated[
+        str | None,
+        "Optional date to update a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Update (or add) a project's status in this week's work diary.
+    """Update (or add) a project's status in a work diary week.
 
     Before calling this tool:
     - Transform the project name, status, and note into professional but authentic
@@ -86,11 +110,11 @@ def update_project_status_tool(
     - If the content appears to be an incomplete thought or fragment, ask the
       user a clarifying question instead of saving.
 
-    Creates a new diary page if this is the first interaction of the week,
-    carrying forward all non-completed projects from the prior week.
+    Defaults to the current week. When a specific past week is targeted and does
+    not yet exist, an empty diary page is created for that week.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         update_project_status(page["week_key"], project, status, note, append_note)
 
         prefix = (
@@ -106,7 +130,7 @@ def update_project_status_tool(
         raise ToolError(str(e)) from e
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+@mcp.tool(annotations={"readOnlyHint": False})
 def bulk_update_projects_tool(
     updates: Annotated[
         list[dict],
@@ -114,6 +138,12 @@ def bulk_update_projects_tool(
         "'status' (str), and may optionally include 'note' (str) and "
         "'append_note' (bool, default false).",
     ],
+    date: Annotated[
+        str | None,
+        "Optional date to update a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
     """Update multiple projects in a single operation.
 
@@ -126,10 +156,11 @@ def bulk_update_projects_tool(
 
     More efficient than calling update_project_status repeatedly when you
     have several projects to update at once, e.g. during a standup.
-    Creates a new diary page if this is the first interaction of the week.
+    Defaults to the current week. When a specific past week is targeted and does
+    not yet exist, an empty diary page is created for that week.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         results = bulk_update_projects(page["week_key"], updates)
 
         prefix = (
@@ -146,18 +177,24 @@ def bulk_update_projects_tool(
         raise ToolError(str(e)) from e
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+@mcp.tool(annotations={"readOnlyHint": False})
 def rename_project_tool(
     old_name: Annotated[str, "The current name of the project to rename"],
     new_name: Annotated[str, "The new name for the project"],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Rename a project in this week's diary, preserving its status and note.
+    """Rename a project in a specific diary week, preserving its status and note.
 
     Raises an error if the project is not found, or if the new name already
     belongs to a different project.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         rename_project(page["week_key"], old_name, new_name)
         return (
             f"✏️ Renamed **{old_name}** → **{new_name}** "
@@ -170,14 +207,20 @@ def rename_project_tool(
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
 def remove_project_tool(
     project: Annotated[str, "The name of the project to remove"],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Remove a project and its note from this week's diary.
+    """Remove a project and its note from a specific diary week.
 
-    Use this when a project is no longer relevant for the current week.
+    Use this when a project is no longer relevant for the target week.
     Raises an error if the project is not found.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         remove_project(page["week_key"], project)
         return f"🗑️ Removed **{project}** from your diary for the week of **{page['week_label']}**."
     except Exception as e:
@@ -187,14 +230,20 @@ def remove_project_tool(
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
 def clear_project_note_tool(
     project: Annotated[str, "The name of the project whose note should be cleared"],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Clear the note for a project in this week's diary.
+    """Clear the note for a project in a specific diary week.
 
     Leaves the project and its status intact. Raises an error if the
     project is not found.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         clear_project_note(page["week_key"], project)
         return (
             f"🧹 Cleared note for **{project}** in your diary "
@@ -206,9 +255,15 @@ def clear_project_note_tool(
 
 @mcp.tool(annotations={"readOnlyHint": False})
 def add_note_tool(
-    content: Annotated[str, "The note content to add to this week's diary"],
+    content: Annotated[str, "The note content to add to the target week's diary"],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Append a note to the general notes section of this week's work diary.
+    """Append a note to the general notes section of a week's work diary.
 
     Before calling this tool:
     - Transform the content into professional but authentic language, preserving
@@ -217,11 +272,11 @@ def add_note_tool(
       user a clarifying question instead of saving.
     - Do not add a timestamp. Only include a date or time if the user mentioned one.
 
-    Creates a new diary page if this is the first interaction of the week,
-    carrying forward all non-completed projects from the prior week.
+    Defaults to the current week. When a specific past week is targeted and does
+    not yet exist, an empty diary page is created for that week.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         add_note(page["week_key"], content)
 
         prefix = (
@@ -241,8 +296,14 @@ def edit_note_tool(
         "The 1-based index of the note to edit, as shown in the diary (e.g. 1 for [1]).",
     ],
     new_content: Annotated[str, "The replacement text for the note"],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Edit an existing note in this week's diary.
+    """Edit an existing note in a specific diary week.
 
     Before calling this tool:
     - Transform the new content into professional but authentic language, preserving
@@ -255,7 +316,7 @@ def edit_note_tool(
     Raises an error if the index is out of range.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         edit_note(page["week_key"], index, new_content)
         return f"✏️ Updated note [{index}] in your diary for the week of **{page['week_label']}**."
     except Exception as e:
@@ -268,14 +329,20 @@ def delete_note_tool(
         int,
         "The 1-based index of the note to delete, as shown in the diary (e.g. 1 for [1]).",
     ],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's diary. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
 ) -> str:
-    """Delete a note from this week's diary by its index number.
+    """Delete a note from a specific diary week by its index number.
 
     Use get_diary first to see the notes and their index numbers.
     Raises an error if the index is out of range.
     """
     try:
-        page = get_or_create_week_page()
+        page = _resolve_target_page(date)
         deleted = delete_note(page["week_key"], index)
         return (
             f"🗑️ Deleted note [{index}] from your diary "

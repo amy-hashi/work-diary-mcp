@@ -21,6 +21,7 @@ import pytest
 # Helpers to point the module at a temp directory
 # ---------------------------------------------------------------------------
 import work_diary_mcp.diary as diary_mod
+import work_diary_mcp.server as server_mod
 
 
 @pytest.fixture()
@@ -269,6 +270,40 @@ class TestConfig:
         assert result == (tmp_path / "from-settings").resolve()
         assert result.is_dir()
 
+    def test_windows_settings_file_uses_appdata(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """On Windows, the default settings file lives under %APPDATA%."""
+        import work_diary_mcp.config as config_mod
+
+        appdata = tmp_path / "AppData" / "Roaming"
+        monkeypatch.setenv("APPDATA", str(appdata))
+
+        with patch.object(config_mod.os, "name", "nt"):
+            result = config_mod._default_settings_file()
+
+        result_str = result.replace("\\", "/")
+        appdata_str = str(appdata).replace("\\", "/")
+        assert result_str.startswith(appdata_str)
+        assert result_str.endswith("work-diary/settings.toml")
+
+    def test_windows_settings_file_falls_back_when_appdata_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """On Windows, the settings path falls back to USERPROFILE/AppData/Roaming when APPDATA is unset."""
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setenv("USERPROFILE", "C:/Users/tester")
+        monkeypatch.delenv("APPDATA", raising=False)
+
+        with patch.object(config_mod.os, "name", "nt"):
+            result = config_mod._default_settings_file()
+
+        result_str = result.replace("\\", "/")
+        assert "Users" in result_str
+        assert "tester" in result_str
+        assert result_str.endswith("work-diary/settings.toml")
+
     def test_settings_file_path_exists_as_file_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
@@ -329,6 +364,236 @@ class TestWeekLock:
             pass
 
         assert lock_path.read_bytes() == b"0"
+
+
+class TestHistoricalWeekWrites:
+    def test_add_note_to_previous_week(self, diary_dir):
+        week_key = "2026-03-02"
+        page = diary_mod.get_or_create_page_for_week(week_key)
+
+        assert page["is_new"] is True
+        assert page["week_key"] == week_key
+
+        diary_mod.add_note(week_key, "retrospective note")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+
+        assert state["weekKey"] == week_key
+        assert state["notes"] == [{"content": "retrospective note"}]
+        assert state["projects"] == {}
+        assert state["projectNotes"] == {}
+
+    def test_previous_week_is_created_empty_without_carry_forward(self, diary_dir):
+        prior_week = "2026-02-23"
+        previous_state = {
+            "weekKey": prior_week,
+            "projects": {"Carry Me": "On Track"},
+            "projectNotes": {"Carry Me": "from the prior week"},
+            "notes": [{"content": "existing note"}],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(previous_state), encoding="utf-8")
+
+        target_week = "2026-03-02"
+        page = diary_mod.get_or_create_page_for_week(target_week)
+
+        assert page["is_new"] is True
+        state = json.loads((diary_dir / f"{target_week}.json").read_text())
+        assert state == {
+            "weekKey": target_week,
+            "projects": {},
+            "projectNotes": {},
+            "notes": [],
+        }
+
+    def test_update_project_status_in_previous_week(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        diary_mod.update_project_status(
+            week_key,
+            "Stacks on TFE",
+            "Blocked",
+            note="waiting on dependency",
+        )
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+
+        assert state["projects"] == {"Stacks on TFE": "Blocked"}
+        assert state["projectNotes"] == {"Stacks on TFE": "waiting on dependency"}
+
+    def test_edit_and_delete_note_in_previous_week(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        diary_mod.add_note(week_key, "first note")
+        diary_mod.add_note(week_key, "second note")
+        diary_mod.edit_note(week_key, 1, "updated first note")
+        deleted = diary_mod.delete_note(week_key, 2)
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert deleted == "second note"
+        assert state["notes"] == [{"content": "updated first note"}]
+
+    def test_current_week_page_with_explicit_date_still_carries_forward(self, diary_dir):
+        prior_week = "2026-02-23"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Carry Me": "On Track"},
+            "projectNotes": {"Carry Me": "week-specific note"},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+
+        current_week = "2026-03-02"
+        page = diary_mod._ensure_week_page(current_week, carry_forward=True)
+
+        assert page["is_new"] is True
+        state = json.loads((diary_dir / f"{current_week}.json").read_text())
+        assert state == {
+            "weekKey": current_week,
+            "projects": {"Carry Me": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+
+    def test_get_or_create_page_for_week_normalizes_to_monday(self, diary_dir):
+        page = diary_mod.get_or_create_page_for_week("2026-03-04")
+
+        assert page["week_key"] == "2026-03-02"
+        assert page["week_label"] == "Mar 2, 2026"
+        assert page["is_new"] is True
+        assert (diary_dir / "2026-03-02.json").exists()
+        assert not (diary_dir / "2026-03-04.json").exists()
+
+    def test_carry_forward_ignores_future_weeks(self, diary_dir):
+        past_week = "2026-03-02"
+        future_week = "2026-04-06"
+
+        (diary_dir / f"{past_week}.json").write_text(
+            json.dumps(
+                {
+                    "weekKey": past_week,
+                    "projects": {"Past Project": "On Track"},
+                    "projectNotes": {"Past Project": "from the past"},
+                    "notes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (diary_dir / f"{future_week}.json").write_text(
+            json.dumps(
+                {
+                    "weekKey": future_week,
+                    "projects": {"Future Project": "Blocked"},
+                    "projectNotes": {"Future Project": "from the future"},
+                    "notes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        target_week = "2026-03-09"
+        carried = diary_mod._get_carry_forward_state(target_week)
+
+        assert carried == {
+            "projects": {"Past Project": "On Track"},
+            "projectNotes": {},
+        }
+
+
+class TestServerWriteTools:
+    def test_resolve_target_page_uses_current_week_helper_for_current_week_iso(self, diary_dir):
+        current_week = diary_mod.get_week_key()
+        expected_page = {
+            "week_key": current_week,
+            "week_label": diary_mod.get_week_label(current_week),
+            "is_new": False,
+        }
+
+        with (
+            patch.object(
+                server_mod, "get_or_create_week_page", return_value=expected_page
+            ) as current_mock,
+            patch.object(server_mod, "get_or_create_page_for_week") as historical_mock,
+        ):
+            page = server_mod._resolve_target_page(current_week)
+
+        assert page == expected_page
+        current_mock.assert_called_once_with()
+        historical_mock.assert_not_called()
+
+    def test_resolve_target_page_uses_historical_helper_for_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+        expected_page = {
+            "week_key": target_week,
+            "week_label": diary_mod.get_week_label(target_week),
+            "is_new": True,
+        }
+
+        with (
+            patch.object(server_mod, "get_or_create_week_page") as current_mock,
+            patch.object(
+                server_mod, "get_or_create_page_for_week", return_value=expected_page
+            ) as historical_mock,
+        ):
+            page = server_mod._resolve_target_page("last week")
+
+        assert page == expected_page
+        current_mock.assert_not_called()
+        historical_mock.assert_called_once_with(target_week)
+
+    def test_add_note_tool_targets_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+
+        with (
+            patch.object(server_mod, "get_or_create_page_for_week") as page_mock,
+            patch.object(server_mod, "add_note") as add_note_mock,
+        ):
+            page_mock.return_value = {
+                "week_key": target_week,
+                "week_label": diary_mod.get_week_label(target_week),
+                "is_new": True,
+            }
+
+            result = server_mod.add_note_tool(
+                "Wrapped up validation work.",
+                date="last week",
+            )
+
+        page_mock.assert_called_once_with(target_week)
+        add_note_mock.assert_called_once_with(target_week, "Wrapped up validation work.")
+        assert "Created new diary" in result
+        assert diary_mod.get_week_label(target_week) in result
+
+    def test_update_project_status_tool_targets_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+
+        with (
+            patch.object(server_mod, "get_or_create_page_for_week") as page_mock,
+            patch.object(server_mod, "update_project_status") as update_mock,
+        ):
+            page_mock.return_value = {
+                "week_key": target_week,
+                "week_label": diary_mod.get_week_label(target_week),
+                "is_new": False,
+            }
+
+            result = server_mod.update_project_status_tool(
+                "Stacks on TFE",
+                "Blocked",
+                note="Waiting on dependency.",
+                append_note=False,
+                date="last week",
+            )
+
+        page_mock.assert_called_once_with(target_week)
+        update_mock.assert_called_once_with(
+            target_week,
+            "Stacks on TFE",
+            "Blocked",
+            "Waiting on dependency.",
+            False,
+        )
+        assert "Stacks on TFE" in result
+        assert diary_mod.get_week_label(target_week) in result
 
 
 # ---------------------------------------------------------------------------

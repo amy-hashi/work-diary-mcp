@@ -14,6 +14,7 @@ Interact with your diary conversationally via the [Claude CLI](https://docs.anth
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
+- **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 
 ---
@@ -134,7 +135,10 @@ On Windows, use Windows-style paths for both the `uv` executable and `WORK_DIARY
 
 ### Option 2 — Settings file
 
-Create `~/.config/work-diary/settings.toml` with a `data_dir` key:
+Create a settings file with a `data_dir` key:
+
+- **macOS / Linux:** `~/.config/work-diary/settings.toml`
+- **Windows:** `%APPDATA%\work-diary\settings.toml`
 
 ```toml
 data_dir = "~/Documents/work-diary"
@@ -145,7 +149,7 @@ The path is expanded automatically and the directory is created on first use.
 ### Resolution order
 
 1. `WORK_DIARY_DATA_DIR` environment variable
-2. `data_dir` in `~/.config/work-diary/settings.toml`
+2. `data_dir` in the platform-native settings file (`~/.config/work-diary/settings.toml` on macOS / Linux, `%APPDATA%\work-diary\settings.toml` on Windows)
 3. Built-in default: `<repo root>/data`
 
 ---
@@ -154,17 +158,17 @@ The path is expanded automatically and the directory is created on first use.
 
 | Tool | Description |
 |------|-------------|
-| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. |
-| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. |
-| `rename_project` | Rename a project, preserving its status and note. |
-| `add_note` | Append a note to the general notes section. |
-| `edit_note` | Replace the content of an existing note by its index number. |
-| `delete_note` | Delete a note by its index number. |
+| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. |
+| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. |
+| `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. |
+| `add_note` | Append a note to the general notes section. Supports an optional `date` to target a specific week. |
+| `edit_note` | Replace the content of an existing note by its index number. Supports an optional `date` to target a specific week. |
+| `delete_note` | Delete a note by its index number. Supports an optional `date` to target a specific week. |
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
-| `remove_project` | Remove a project and its note from this week's diary. |
-| `clear_project_note` | Clear the inline note for a project, leaving its status intact. |
+| `remove_project` | Remove a project and its note from the target week. Supports an optional `date` to target a specific week. |
+| `clear_project_note` | Clear the inline note for a project, leaving its status intact. Supports an optional `date` to target a specific week. |
 
 ---
 
@@ -191,6 +195,10 @@ Edit note 2: corrected — the all-hands covered Q3 and Q4 roadmap
 Delete note 3
 PROJ-1234 is now On Track
 Add a note: opened PROJ-1234 and INFRA-5678 to track the rollout
+Add a note to last week's diary: wrapped up the migration checklist
+Edit note 2 in last week's diary: corrected the rollout status
+Delete note 1 from 2 weeks ago
+Update Stacks on TFE to Blocked in last week's diary with a note: waiting on dependency
 ```
 
 ---
@@ -300,6 +308,8 @@ Each week is represented by two files keyed on the Monday of that week:
 
 - `YYYY-MM-DD.json` — source of truth (raw state)
 - `YYYY-MM-DD.md` — rendered Markdown, ready to copy into Microsoft Loop
+
+Write operations default to the current week, but can also target a specific past week using a relative date or ISO date. If a past week does not yet exist, the server creates an empty diary page for that week instead of carrying forward state.
 
 ---
 
