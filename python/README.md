@@ -136,7 +136,7 @@ The path is expanded automatically and the directory is created on first use.
 
 You can also configure Jira auto-linking in the same settings file:
 
-- `jira_base_url` — the base browse URL for your Jira instance
+- `jira_base_url` — the base browse URL for your Jira instance. This must be a non-empty absolute URL and include a scheme such as `https://`.
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
 
 ### Resolution order
@@ -247,10 +247,10 @@ The default Jira configuration is:
 You can override these with either:
 
 - environment variables:
-  - `WORK_DIARY_JIRA_BASE_URL`
+  - `WORK_DIARY_JIRA_BASE_URL` — must be a non-empty absolute URL with a scheme such as `https://`
   - `WORK_DIARY_JIRA_PREFIXES` (comma-separated, for example `PROJ,INFRA,ENG`)
 - settings file keys:
-  - `jira_base_url`
+  - `jira_base_url` — must be a non-empty absolute URL with a scheme such as `https://`
   - `jira_prefixes`
 
 Examples:
