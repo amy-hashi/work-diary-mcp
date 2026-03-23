@@ -62,6 +62,11 @@ mcp = FastMCP(
 # --------------------------------------------------------------------------- #
 
 
+def _resolve_target_page(date: str | None) -> dict:
+    """Return the target diary page for a write operation."""
+    return get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
+
+
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
 def update_project_status_tool(
     project: Annotated[str, "The name of the project to update, e.g. 'Project Phoenix'"],
@@ -101,9 +106,7 @@ def update_project_status_tool(
     not yet exist, an empty diary page is created for that week.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         update_project_status(page["week_key"], project, status, note, append_note)
 
         prefix = (
@@ -149,9 +152,7 @@ def bulk_update_projects_tool(
     not yet exist, an empty diary page is created for that week.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         results = bulk_update_projects(page["week_key"], updates)
 
         prefix = (
@@ -185,9 +186,7 @@ def rename_project_tool(
     belongs to a different project.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         rename_project(page["week_key"], old_name, new_name)
         return (
             f"✏️ Renamed **{old_name}** → **{new_name}** "
@@ -213,9 +212,7 @@ def remove_project_tool(
     Raises an error if the project is not found.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         remove_project(page["week_key"], project)
         return f"🗑️ Removed **{project}** from your diary for the week of **{page['week_label']}**."
     except Exception as e:
@@ -238,9 +235,7 @@ def clear_project_note_tool(
     project is not found.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         clear_project_note(page["week_key"], project)
         return (
             f"🧹 Cleared note for **{project}** in your diary "
@@ -273,9 +268,7 @@ def add_note_tool(
     not yet exist, an empty diary page is created for that week.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         add_note(page["week_key"], content)
 
         prefix = (
@@ -315,9 +308,7 @@ def edit_note_tool(
     Raises an error if the index is out of range.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         edit_note(page["week_key"], index, new_content)
         return f"✏️ Updated note [{index}] in your diary for the week of **{page['week_label']}**."
     except Exception as e:
@@ -343,9 +334,7 @@ def delete_note_tool(
     Raises an error if the index is out of range.
     """
     try:
-        page = (
-            get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
-        )
+        page = _resolve_target_page(date)
         deleted = delete_note(page["week_key"], index)
         return (
             f"🗑️ Deleted note [{index}] from your diary "
