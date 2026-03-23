@@ -13,35 +13,38 @@ from pathlib import Path
 ENV_VAR = "WORK_DIARY_DATA_DIR"
 
 
-def _default_settings_file() -> Path:
-    """Return the platform-native default settings file path."""
+def _default_settings_file() -> str:
+    """Return the platform-native default settings file path as a string."""
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
-            return Path(ntpath.join(appdata, "work-diary", "settings.toml"))
+            return ntpath.join(appdata, "work-diary", "settings.toml")
 
         userprofile = os.environ.get("USERPROFILE")
         if userprofile:
-            return Path(
-                ntpath.join(
-                    userprofile,
-                    "AppData",
-                    "Roaming",
-                    "work-diary",
-                    "settings.toml",
-                )
+            return ntpath.join(
+                userprofile,
+                "AppData",
+                "Roaming",
+                "work-diary",
+                "settings.toml",
             )
 
-        return Path(
-            ntpath.join("C:\\Users\\Default", "AppData", "Roaming", "work-diary", "settings.toml")
+        return ntpath.join(
+            "C:\\Users\\Default",
+            "AppData",
+            "Roaming",
+            "work-diary",
+            "settings.toml",
         )
-    return Path.home() / ".config" / "work-diary" / "settings.toml"
+
+    return str(Path.home() / ".config" / "work-diary" / "settings.toml")
 
 
 # Default settings file location:
 # - Windows: %APPDATA%/work-diary/settings.toml
 # - Other platforms: ~/.config/work-diary/settings.toml
-SETTINGS_FILE = _default_settings_file()
+SETTINGS_FILE = Path(_default_settings_file())
 
 # Built-in fallback: <repo root>/data  (python/work_diary_mcp/ -> repo root)
 _BUILTIN_DEFAULT = Path(__file__).parent.parent.parent / "data"
