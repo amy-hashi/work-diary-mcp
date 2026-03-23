@@ -164,8 +164,8 @@ The path is expanded automatically and the directory is created on first use.
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
-| `remove_project` | Remove a project and its note from this week's diary. |
-| `clear_project_note` | Clear the inline note for a project, leaving its status intact. |
+| `remove_project` | Remove a project and its note from the target week. Supports an optional `date` to target a specific week. |
+| `clear_project_note` | Clear the inline note for a project, leaving its status intact. Supports an optional `date` to target a specific week. |
 
 ---
 
