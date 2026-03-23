@@ -64,10 +64,18 @@ mcp = FastMCP(
 
 def _resolve_target_page(date: str | None) -> dict:
     """Return the target diary page for a write operation."""
-    return get_or_create_page_for_week(parse_week_key(date)) if date else get_or_create_week_page()
+    if not date:
+        return get_or_create_week_page()
+
+    week_key = parse_week_key(date)
+    return (
+        get_or_create_week_page()
+        if week_key == get_week_key()
+        else get_or_create_page_for_week(week_key)
+    )
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+@mcp.tool(annotations={"readOnlyHint": False})
 def update_project_status_tool(
     project: Annotated[str, "The name of the project to update, e.g. 'Project Phoenix'"],
     status: Annotated[
@@ -122,7 +130,7 @@ def update_project_status_tool(
         raise ToolError(str(e)) from e
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+@mcp.tool(annotations={"readOnlyHint": False})
 def bulk_update_projects_tool(
     updates: Annotated[
         list[dict],
@@ -169,7 +177,7 @@ def bulk_update_projects_tool(
         raise ToolError(str(e)) from e
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+@mcp.tool(annotations={"readOnlyHint": False})
 def rename_project_tool(
     old_name: Annotated[str, "The current name of the project to rename"],
     new_name: Annotated[str, "The new name for the project"],

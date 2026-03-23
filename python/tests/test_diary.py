@@ -397,6 +397,63 @@ class TestHistoricalWeekWrites:
         assert deleted == "second note"
         assert state["notes"] == [{"content": "updated first note"}]
 
+    def test_current_week_page_with_explicit_date_still_carries_forward(self, diary_dir):
+        prior_week = "2026-02-23"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Carry Me": "On Track"},
+            "projectNotes": {"Carry Me": "week-specific note"},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+
+        current_week = "2026-03-02"
+        page = diary_mod._ensure_week_page(current_week, carry_forward=True)
+
+        assert page["is_new"] is True
+        state = json.loads((diary_dir / f"{current_week}.json").read_text())
+        assert state == {
+            "weekKey": current_week,
+            "projects": {"Carry Me": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+
+    def test_carry_forward_ignores_future_weeks(self, diary_dir):
+        past_week = "2026-03-02"
+        future_week = "2026-04-06"
+
+        (diary_dir / f"{past_week}.json").write_text(
+            json.dumps(
+                {
+                    "weekKey": past_week,
+                    "projects": {"Past Project": "On Track"},
+                    "projectNotes": {"Past Project": "from the past"},
+                    "notes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (diary_dir / f"{future_week}.json").write_text(
+            json.dumps(
+                {
+                    "weekKey": future_week,
+                    "projects": {"Future Project": "Blocked"},
+                    "projectNotes": {"Future Project": "from the future"},
+                    "notes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        target_week = "2026-03-09"
+        carried = diary_mod._get_carry_forward_state(target_week)
+
+        assert carried == {
+            "projects": {"Past Project": "On Track"},
+            "projectNotes": {},
+        }
+
 
 # ---------------------------------------------------------------------------
 # Statuses
