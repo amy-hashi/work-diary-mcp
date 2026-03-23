@@ -249,7 +249,7 @@ def _save_state(state: DiaryState) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _get_carry_forward_state() -> dict:
+def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
     """Return projects from the most recent prior week, if any.
 
     Projects whose status is considered complete (Done, Completed, Cancelled,
@@ -259,6 +259,8 @@ def _get_carry_forward_state() -> dict:
     week-specific context and should start fresh each week.
     """
     weeks = list_week_keys()
+    if target_week_key is not None:
+        weeks = [week for week in weeks if week < target_week_key]
     if not weeks:
         return {"projects": {}, "projectNotes": {}}
     last = _load_state(weeks[-1])
@@ -291,7 +293,7 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
     with _week_lock(week_key):
         if not _diary_path(week_key).exists():
             initial_state = (
-                _get_carry_forward_state()
+                _get_carry_forward_state(week_key)
                 if carry_forward
                 else {"projects": {}, "projectNotes": {}}
             )
