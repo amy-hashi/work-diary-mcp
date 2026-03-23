@@ -4,7 +4,7 @@ All notable changes to `work-diary-mcp` will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows a simple versioned changelog structure.
 
-## [Unreleased]
+## [0.1.0 - 03-23-2026]
 
 ### Added
 - Support for writing to previous diary weeks across write operations, including:
@@ -93,7 +93,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
   - updated tool descriptions and usage examples
 - Added a top-level `CHANGELOG.md` and linked it from both README files.
 
-## [1.0.0]
+## [Unreleased]
 - Initial Python-based MCP server for managing weekly work diaries.
 - Project status tracking with inline notes.
 - General note capture.
