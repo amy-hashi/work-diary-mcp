@@ -892,6 +892,15 @@ class TestReminders:
 
         assert "- [x] Confirm rollout checklist." in markdown
 
+    def test_get_diary_markdown_normalizes_week_key_for_reminders(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.", due_date="2026-03-27")
+
+        markdown = diary_mod.get_diary_markdown("2026-03-04")
+
+        assert "## Reminders for this week" in markdown
+        assert "- [ ] Due Date: 2026-03-27 Follow up with the perf team." in markdown
+
     def test_get_diary_markdown_shows_empty_reminder_placeholder(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.get_or_create_page_for_week(week_key)
@@ -1036,6 +1045,7 @@ class TestMigrateState:
         linked_key = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
         assert linked_key in state["projects"]
         assert linked_key in state["projectNotes"]
+        assert state["projectNotes"][linked_key] == "needs attention"
         assert "PROJ-1234" not in state["projectNotes"]
 
     def test_bare_ticket_in_general_note_linkified_on_load(self, diary_dir):
