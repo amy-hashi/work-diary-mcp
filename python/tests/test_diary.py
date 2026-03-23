@@ -331,6 +331,73 @@ class TestWeekLock:
         assert lock_path.read_bytes() == b"0"
 
 
+class TestHistoricalWeekWrites:
+    def test_add_note_to_previous_week(self, diary_dir):
+        week_key = "2026-03-02"
+        page = diary_mod.get_or_create_page_for_week(week_key)
+
+        assert page["is_new"] is True
+        assert page["week_key"] == week_key
+
+        diary_mod.add_note(week_key, "retrospective note")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+
+        assert state["weekKey"] == week_key
+        assert state["notes"] == [{"content": "retrospective note"}]
+        assert state["projects"] == {}
+        assert state["projectNotes"] == {}
+
+    def test_previous_week_is_created_empty_without_carry_forward(self, diary_dir):
+        prior_week = "2026-02-23"
+        previous_state = {
+            "weekKey": prior_week,
+            "projects": {"Carry Me": "On Track"},
+            "projectNotes": {"Carry Me": "from the prior week"},
+            "notes": [{"content": "existing note"}],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(previous_state), encoding="utf-8")
+
+        target_week = "2026-03-02"
+        page = diary_mod.get_or_create_page_for_week(target_week)
+
+        assert page["is_new"] is True
+        state = json.loads((diary_dir / f"{target_week}.json").read_text())
+        assert state == {
+            "weekKey": target_week,
+            "projects": {},
+            "projectNotes": {},
+            "notes": [],
+        }
+
+    def test_update_project_status_in_previous_week(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        diary_mod.update_project_status(
+            week_key,
+            "Stacks on TFE",
+            "Blocked",
+            note="waiting on dependency",
+        )
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+
+        assert state["projects"] == {"Stacks on TFE": "Blocked"}
+        assert state["projectNotes"] == {"Stacks on TFE": "waiting on dependency"}
+
+    def test_edit_and_delete_note_in_previous_week(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        diary_mod.add_note(week_key, "first note")
+        diary_mod.add_note(week_key, "second note")
+        diary_mod.edit_note(week_key, 1, "updated first note")
+        deleted = diary_mod.delete_note(week_key, 2)
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert deleted == "second note"
+        assert state["notes"] == [{"content": "updated first note"}]
+
+
 # ---------------------------------------------------------------------------
 # Statuses
 # ---------------------------------------------------------------------------

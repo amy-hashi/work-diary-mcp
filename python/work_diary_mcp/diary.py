@@ -276,6 +276,38 @@ def _get_carry_forward_state() -> dict:
 # --------------------------------------------------------------------------- #
 
 
+def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
+    """
+    Get or create a diary page for a specific week.
+
+    Returns a dict with keys: week_key, week_label, is_new.
+    When *carry_forward* is True, newly created pages inherit non-completed
+    projects from the most recent prior week. When False, newly created pages
+    start empty.
+    """
+    week_label = get_week_label(week_key)
+    is_new = False
+
+    with _week_lock(week_key):
+        if not _diary_path(week_key).exists():
+            initial_state = (
+                _get_carry_forward_state()
+                if carry_forward
+                else {"projects": {}, "projectNotes": {}}
+            )
+            _save_state(
+                {
+                    "weekKey": week_key,
+                    "projects": initial_state["projects"],
+                    "projectNotes": initial_state["projectNotes"],
+                    "notes": [],
+                }
+            )
+            is_new = True
+
+    return {"week_key": week_key, "week_label": week_label, "is_new": is_new}
+
+
 def get_or_create_week_page() -> dict:
     """
     Get or create this week's diary page.
@@ -284,24 +316,17 @@ def get_or_create_week_page() -> dict:
     On first call of the week, projects are carried forward from the prior week,
     excluding any projects with a completed status (Done, Completed, Cancelled, etc.).
     """
-    week_key = get_week_key()
-    week_label = get_week_label(week_key)
-    is_new = False
+    return _ensure_week_page(get_week_key(), carry_forward=True)
 
-    with _week_lock(week_key):
-        if not _diary_path(week_key).exists():
-            carried = _get_carry_forward_state()
-            _save_state(
-                {
-                    "weekKey": week_key,
-                    "projects": carried["projects"],
-                    "projectNotes": carried["projectNotes"],
-                    "notes": [],
-                }
-            )
-            is_new = True
 
-    return {"week_key": week_key, "week_label": week_label, "is_new": is_new}
+def get_or_create_page_for_week(week_key: str) -> dict:
+    """
+    Get or create a diary page for a specific week.
+
+    Historical weeks are created empty rather than carrying forward state from
+    adjacent weeks.
+    """
+    return _ensure_week_page(week_key, carry_forward=False)
 
 
 def update_project_status(
