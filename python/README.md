@@ -4,6 +4,8 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for man
 
 Interact with your diary conversationally via the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) or [Zed](https://zed.dev). The server writes Markdown files to disk that can be copied directly into Microsoft Loop (or any Markdown-compatible tool).
 
+See the [project changelog](../CHANGELOG.md) for release history and in-progress changes.
+
 ---
 
 ## Why Python?
@@ -21,8 +23,9 @@ Interact with your diary conversationally via the [Claude CLI](https://docs.anth
 - **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
-- **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
+- **Relative date support** — target diary weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week using natural language such as `"add a note to last week's diary"`
+- **Weekly reminders** — store reminders for the current week or future weeks without creating future diary pages, render them with checkboxes, and mark them complete as work is finished
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 
 ---
@@ -125,15 +128,30 @@ Create a settings file with a `data_dir` key:
 
 ```toml
 data_dir = "~/Documents/work-diary"
+jira_base_url = "https://jira.example.com/browse"
+jira_prefixes = ["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]
 ```
 
 The path is expanded automatically and the directory is created on first use.
 
+You can also configure Jira auto-linking in the same settings file:
+
+- `jira_base_url` — the base browse URL for your Jira instance. This must be a non-empty absolute URL and include a scheme such as `https://`.
+- `jira_prefixes` — the list of Jira project key prefixes that should be linkified
+
 ### Resolution order
 
+**Data directory**
 1. `WORK_DIARY_DATA_DIR` environment variable
 2. `data_dir` in the platform-native settings file (`~/.config/work-diary/settings.toml` on macOS/Linux, `%APPDATA%\work-diary\settings.toml` on Windows)
 3. Built-in default: `<repo root>/data`
+
+**Jira auto-linking**
+1. `WORK_DIARY_JIRA_BASE_URL` / `WORK_DIARY_JIRA_PREFIXES` environment variables
+2. `jira_base_url` / `jira_prefixes` in the platform-native settings file
+3. Built-in defaults:
+   - `https://jira.example.com/browse`
+   - `["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]`
 
 ---
 
@@ -147,6 +165,10 @@ The path is expanded automatically and the directory is created on first use.
 | `add_note` | Append a note to the general notes section. You can also target a past week with `date`. |
 | `edit_note` | Replace the content of an existing note by its index number. You can also target a past week with `date`. |
 | `delete_note` | Delete a note by its index number. You can also target a past week with `date`. |
+| `add_reminder` | Add a reminder for the current week or a future week without creating a future diary page. Supports an optional `date` to target a specific week and an optional `due_date` to render before the reminder text. |
+| `list_reminders` | List all reminders for the target week. Supports an optional `date` to target a specific week. |
+| `complete_reminder` | Mark a reminder as complete for the target week. Supports an optional `date` to target a specific week. |
+| `reopen_reminder` | Mark a completed reminder as incomplete for the target week. Supports an optional `date` to target a specific week. |
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
@@ -182,6 +204,11 @@ Add a note to last week's diary: followed up on rollout issues
 Edit note 2 in last week's diary: corrected the deployment summary
 Delete note 1 from 2 weeks ago
 Update Stacks on TFE to Blocked in last week's diary
+Add a reminder for next week: follow up with the perf testing team
+Add a reminder for 2 weeks from now with due date Friday: confirm rollout checklist
+List reminders for next week
+Complete reminder 1 for this week
+Reopen reminder 2 for last week
 ```
 
 ---
@@ -212,18 +239,19 @@ Terminal statuses are used to decide what should not be carried forward into a n
 
 Bare Jira ticket references are automatically converted to Markdown links whenever text is saved to the diary — in project names, inline notes, and general notes. Already-linked references are never double-linked.
 
-The current default Jira base URL is:
+The default Jira configuration is:
 
-- `https://jira.example.com/browse`
+- **Base URL:** `https://jira.example.com/browse`
+- **Prefixes:** `PROJ`, `INFRA`, `ENG`, `OPS`, `SEC`, `DATA`
 
-Example ticket prefixes are:
+You can override these with either:
 
-- `PROJ`
-- `INFRA`
-- `ENG`
-- `OPS`
-- `SEC`
-- `DATA`
+- environment variables:
+  - `WORK_DIARY_JIRA_BASE_URL` — must be a non-empty absolute URL with a scheme such as `https://`
+  - `WORK_DIARY_JIRA_PREFIXES` (comma-separated, for example `PROJ,INFRA,ENG`)
+- settings file keys:
+  - `jira_base_url` — must be a non-empty absolute URL with a scheme such as `https://`
+  - `jira_prefixes`
 
 Examples:
 
@@ -235,10 +263,14 @@ Examples:
 
 Ticket keys are uppercased in generated links. References that do not match a supported prefix are left as-is.
 
-To customize auto-linking for your Jira instance, update `work_diary_mcp/jira.py`:
+To customize auto-linking for your Jira instance, use configuration rather than editing source code:
 
-- **`_KNOWN_PREFIXES`** — the tuple of recognised project key prefixes
-- **`JIRA_BASE_URL`** — your Jira instance's base browse URL
+- **Environment variables**
+  - `WORK_DIARY_JIRA_BASE_URL`
+  - `WORK_DIARY_JIRA_PREFIXES`
+- **Settings file**
+  - `jira_base_url`
+  - `jira_prefixes`
 
 ---
 
@@ -292,6 +324,11 @@ Each week's diary is stored as two files in the configured data directory, keyed
 ```markdown
 # Work Diary — Week of Mar 2, 2026
 
+## Reminders for this week
+
+- [ ] Due Date: 2026-03-05 Follow up with the perf testing team
+- [x] Confirm rollout checklist
+
 ## Project Status
 
 | Project | Status | Notes |
@@ -310,6 +347,8 @@ Each week's diary is stored as two files in the configured data directory, keyed
 On the first interaction of each new week, a fresh diary page is created automatically. Non-terminal projects are copied forward from the most recent prior week so you never start from a blank slate.
 
 If you write to a past week that does not exist yet, the server creates an empty diary page for that week instead of carrying state forward retroactively.
+
+Reminders are stored separately from weekly diary pages, so you can add them for the current week or for future weeks without creating future diary files. When a week is rendered, reminders for that week appear in a `Reminders for this week` section before `Project Status`. If a reminder includes a due date, it is rendered first in the reminder text as `Due Date: <date>`. When reminders change for an existing week, the server refreshes that week's rendered Markdown file without creating diary pages for other weeks.
 
 Carry-forward behavior is currently:
 

@@ -1,5 +1,15 @@
 from work_diary_mcp.statuses import format_status
 
+
+def _format_reminder_line(reminder: dict) -> str:
+    """Render a reminder as a Markdown checkbox list item."""
+    checkbox = "[x]" if reminder.get("completed", False) else "[ ]"
+    due_date = reminder.get("dueDate")
+    content = reminder.get("content", "")
+    prefix = f"Due Date: {due_date} " if due_date else ""
+    return f"- {checkbox} {prefix}{content}"
+
+
 # --------------------------------------------------------------------------- #
 # Renderer
 # --------------------------------------------------------------------------- #
@@ -24,6 +34,7 @@ def render_diary(state: dict) -> str:
     from work_diary_mcp.diary import get_week_label
 
     week_key: str = state["weekKey"]
+    reminders: list[dict] = state.get("reminders", [])
     projects: dict[str, str] = state.get("projects", {})
     project_notes: dict[str, str] = state.get("projectNotes", {})
     notes: list[dict] = state.get("notes", [])
@@ -33,6 +44,18 @@ def render_diary(state: dict) -> str:
 
     # Title
     lines.append(f"# Work Diary — Week of {label}")
+    lines.append("")
+
+    # Reminders
+    lines.append("## Reminders for this week")
+    lines.append("")
+
+    if not reminders:
+        lines.append("*(no reminders for this week)*")
+    else:
+        for reminder in reminders:
+            lines.append(_format_reminder_line(reminder))
+
     lines.append("")
 
     # Project status table

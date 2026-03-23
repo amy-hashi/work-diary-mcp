@@ -11,6 +11,11 @@ from pathlib import Path
 # --------------------------------------------------------------------------- #
 
 ENV_VAR = "WORK_DIARY_DATA_DIR"
+JIRA_BASE_URL_ENV_VAR = "WORK_DIARY_JIRA_BASE_URL"
+JIRA_PREFIXES_ENV_VAR = "WORK_DIARY_JIRA_PREFIXES"
+
+_DEFAULT_JIRA_BASE_URL = "https://jira.example.com/browse"
+_DEFAULT_JIRA_PREFIXES: tuple[str, ...] = ("PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA")
 
 
 def _default_settings_file() -> str:
@@ -95,6 +100,20 @@ def _resolve() -> tuple[Path, str]:
     return _BUILTIN_DEFAULT.resolve(), "built-in default"
 
 
+def _load_settings_data(path: Path) -> dict:
+    """Parse *path* as TOML and return the decoded settings object."""
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return data
+
+
 def _read_settings_file(path: Path) -> Path | None:
     """Parse *path* as TOML and return the ``data_dir`` value, or None.
 
@@ -106,11 +125,7 @@ def _read_settings_file(path: Path) -> Path | None:
     Raises:
         TypeError: If ``data_dir`` is present but is not a string.
     """
-    try:
-        with path.open("rb") as fh:
-            data = tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
+    data = _load_settings_data(path)
 
     raw = data.get("data_dir")
     if raw is None:
@@ -123,6 +138,63 @@ def _read_settings_file(path: Path) -> Path | None:
         )
 
     return Path(raw)
+
+
+@lru_cache(maxsize=1)
+def get_jira_base_url() -> str:
+    """Return the configured Jira browse base URL."""
+    raw_env = os.environ.get(JIRA_BASE_URL_ENV_VAR)
+    if raw_env:
+        return _normalize_jira_base_url(raw_env, source=f"${JIRA_BASE_URL_ENV_VAR}")
+
+    if SETTINGS_FILE.exists():
+        data = _load_settings_data(SETTINGS_FILE)
+        raw = data.get("jira_base_url")
+        if raw is not None:
+            if not isinstance(raw, str):
+                raise TypeError(
+                    f"Invalid settings file {SETTINGS_FILE}: "
+                    f"'jira_base_url' must be a string, got {type(raw).__name__!r}."
+                )
+            return _normalize_jira_base_url(raw, source=str(SETTINGS_FILE))
+
+    return _DEFAULT_JIRA_BASE_URL
+
+
+@lru_cache(maxsize=1)
+def get_jira_prefixes() -> tuple[str, ...]:
+    """Return the configured Jira prefixes."""
+    raw_env = os.environ.get(JIRA_PREFIXES_ENV_VAR)
+    if raw_env:
+        prefixes = tuple(prefix.strip().upper() for prefix in raw_env.split(",") if prefix.strip())
+        return prefixes or _DEFAULT_JIRA_PREFIXES
+
+    if SETTINGS_FILE.exists():
+        data = _load_settings_data(SETTINGS_FILE)
+        raw = data.get("jira_prefixes")
+        if raw is not None:
+            if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+                raise TypeError(
+                    f"Invalid settings file {SETTINGS_FILE}: "
+                    "'jira_prefixes' must be a list of strings."
+                )
+            prefixes = tuple(item.strip().upper() for item in raw if item.strip())
+            return prefixes or _DEFAULT_JIRA_PREFIXES
+
+    return _DEFAULT_JIRA_PREFIXES
+
+
+def _normalize_jira_base_url(value: str, source: str) -> str:
+    """Validate and normalize a configured Jira base URL."""
+    normalized = value.strip().rstrip("/")
+    if not normalized:
+        raise ValueError(f"Invalid Jira base URL configured via {source}: value must not be empty.")
+    if "://" not in normalized:
+        raise ValueError(
+            f"Invalid Jira base URL configured via {source}: "
+            "value must include a URL scheme such as 'https://'."
+        )
+    return normalized
 
 
 def _validate(path: Path, source: str) -> None:
