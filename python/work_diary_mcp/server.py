@@ -65,6 +65,20 @@ mcp = FastMCP(
 # Tools
 # --------------------------------------------------------------------------- #
 
+_DATE_HELP_TEXT = (
+    "Optional date to target a specific week's diary. "
+    "Accepts ISO dates (e.g. '2026-03-02'), 'last week', 'next week', "
+    "'N weeks ago', 'N weeks from now', or 'in N weeks'. "
+    "Defaults to the current week."
+)
+
+_REMINDER_DATE_HELP_TEXT = (
+    "Optional date to target a specific week's reminders. "
+    "Accepts ISO dates (e.g. '2026-03-02'), 'last week', 'next week', "
+    "'N weeks ago', 'N weeks from now', or 'in N weeks'. "
+    "Defaults to the current week."
+)
+
 
 def _resolve_target_page(date: str | None) -> dict:
     """Return the target diary page for a write operation."""
@@ -98,12 +112,7 @@ def update_project_status_tool(
         "rather than replacing it. Has no effect when no prior note exists. "
         "Defaults to False.",
     ] = False,
-    date: Annotated[
-        str | None,
-        "Optional date to update a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Update (or add) a project's status in a work diary week.
 
@@ -142,12 +151,7 @@ def bulk_update_projects_tool(
         "'status' (str), and may optionally include 'note' (str) and "
         "'append_note' (bool, default false).",
     ],
-    date: Annotated[
-        str | None,
-        "Optional date to update a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Update multiple projects in a single operation.
 
@@ -185,12 +189,7 @@ def bulk_update_projects_tool(
 def rename_project_tool(
     old_name: Annotated[str, "The current name of the project to rename"],
     new_name: Annotated[str, "The new name for the project"],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Rename a project in a specific diary week, preserving its status and note.
 
@@ -211,12 +210,7 @@ def rename_project_tool(
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
 def remove_project_tool(
     project: Annotated[str, "The name of the project to remove"],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Remove a project and its note from a specific diary week.
 
@@ -234,12 +228,7 @@ def remove_project_tool(
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
 def clear_project_note_tool(
     project: Annotated[str, "The name of the project whose note should be cleared"],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Clear the note for a project in a specific diary week.
 
@@ -260,12 +249,7 @@ def clear_project_note_tool(
 @mcp.tool(annotations={"readOnlyHint": False})
 def add_note_tool(
     content: Annotated[str, "The note content to add to the target week's diary"],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Append a note to the general notes section of a week's work diary.
 
@@ -300,12 +284,7 @@ def edit_note_tool(
         "The 1-based index of the note to edit, as shown in the diary (e.g. 1 for [1]).",
     ],
     new_content: Annotated[str, "The replacement text for the note"],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Edit an existing note in a specific diary week.
 
@@ -333,12 +312,7 @@ def delete_note_tool(
         int,
         "The 1-based index of the note to delete, as shown in the diary (e.g. 1 for [1]).",
     ],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Delete a note from a specific diary week by its index number.
 
@@ -363,12 +337,7 @@ def add_reminder_tool(
         str | None,
         "Optional due date to render before the reminder text, exactly as provided.",
     ] = None,
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's reminders. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', 'next week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _REMINDER_DATE_HELP_TEXT] = None,
 ) -> str:
     """Add a reminder for a specific week without creating a future diary page."""
     try:
@@ -382,12 +351,7 @@ def add_reminder_tool(
 
 @mcp.tool(annotations={"readOnlyHint": True})
 def list_reminders_tool(
-    date: Annotated[
-        str | None,
-        "Optional date to list reminders for a specific week. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _REMINDER_DATE_HELP_TEXT] = None,
 ) -> str:
     """List all reminders for the target week."""
     try:
@@ -417,12 +381,7 @@ def complete_reminder_tool(
         int,
         "The 1-based index of the reminder to mark complete, as shown by list_reminders.",
     ],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's reminders. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _REMINDER_DATE_HELP_TEXT] = None,
 ) -> str:
     """Mark a reminder as completed."""
     try:
@@ -440,12 +399,7 @@ def reopen_reminder_tool(
         int,
         "The 1-based index of the reminder to mark incomplete, as shown by list_reminders.",
     ],
-    date: Annotated[
-        str | None,
-        "Optional date to target a specific week's reminders. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _REMINDER_DATE_HELP_TEXT] = None,
 ) -> str:
     """Mark a completed reminder as incomplete."""
     try:
@@ -459,12 +413,7 @@ def reopen_reminder_tool(
 
 @mcp.tool(annotations={"readOnlyHint": True})
 def get_diary(
-    date: Annotated[
-        str | None,
-        "Optional date to retrieve a specific week's diary. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Retrieve the full Markdown content of a week's work diary.
 
@@ -482,12 +431,7 @@ def get_diary(
 
 @mcp.tool(annotations={"readOnlyHint": True})
 def list_projects_tool(
-    date: Annotated[
-        str | None,
-        "Optional date to list projects for a specific week. "
-        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
-        "Defaults to the current week.",
-    ] = None,
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """List all projects and their current statuses tracked in the diary.
 

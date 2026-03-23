@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from work_diary_mcp.config import get_jira_base_url, get_jira_prefixes
 
@@ -12,8 +13,9 @@ from work_diary_mcp.config import get_jira_base_url, get_jira_prefixes
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 
 
+@lru_cache(maxsize=1)
 def _bare_ticket_re() -> re.Pattern[str]:
-    """Build the Jira ticket regex from the configured prefixes."""
+    """Build and cache the Jira ticket regex from the configured prefixes."""
     prefixes = get_jira_prefixes()
     prefix_alternation = "|".join(re.escape(p) for p in prefixes)
     return re.compile(

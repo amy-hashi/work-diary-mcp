@@ -711,9 +711,10 @@ def get_diary_markdown(week_key: str) -> str:
     """Render the diary as Markdown and return it without writing files."""
     from work_diary_mcp.markdown import render_diary
 
-    state = _load_state(week_key)
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    state = _load_state(normalized_week_key)
     reminder_state = _load_reminder_state()
-    reminders = reminder_state["reminders"].get(week_key, [])
+    reminders = reminder_state["reminders"].get(normalized_week_key, [])
     render_state = {
         **state,
         "reminders": reminders,
