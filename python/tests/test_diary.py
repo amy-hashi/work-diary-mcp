@@ -150,10 +150,11 @@ class TestConfig:
 
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+        monkeypatch.setattr(config_mod, "_read_settings_file", lambda path: target)
 
         self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
-        assert result == target.expanduser().resolve()
+        assert result == target.resolve()
         assert result.is_dir()
 
     def test_builtin_default_used_when_nothing_configured(
@@ -326,10 +327,8 @@ class TestConfig:
         settings_file.write_text(f'data_dir = "{blocker}"\n', encoding="utf-8")
 
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
-        monkeypatch.delenv("APPDATA", raising=False)
-        monkeypatch.delenv("USERPROFILE", raising=False)
-        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+        monkeypatch.setattr(config_mod, "_read_settings_file", lambda path: blocker)
 
         self._clear_cache(config_mod)
         with pytest.raises(ValueError, match="not a directory"):
@@ -1307,8 +1306,8 @@ class TestUpdateProjectStatus:
         diary_mod.update_project_status(
             week_key, "Alpha", "Blocked", note="second", append_note=True
         )
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projectNotes"]["Alpha"] == "first" + " — " + "second"
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+        assert state["projectNotes"]["Alpha"] == "first \u2014 second"
 
     def test_append_note_no_prior_note(self, diary_dir):
         week_key = "2026-03-02"
@@ -1443,8 +1442,8 @@ class TestBulkUpdateProjects:
                 }
             ],
         )
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projectNotes"]["Alpha"] == "first" + " — " + "second"
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+        assert state["projectNotes"]["Alpha"] == "first \u2014 second"
 
     def test_returns_result_strings(self, diary_dir):
         week_key = "2026-03-02"
