@@ -901,6 +901,28 @@ class TestReminders:
         assert "## Reminders for this week" in markdown
         assert "- [ ] Due Date: 2026-03-27 Follow up with the perf team." in markdown
 
+    def test_add_reminder_updates_persisted_markdown_for_existing_week(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.", due_date="2026-03-27")
+
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+        assert "## Reminders for this week" in markdown
+        assert "- [ ] Due Date: 2026-03-27 Follow up with the perf team." in markdown
+        assert "*(no reminders for this week)*" not in markdown
+
+    def test_completed_reminder_updates_persisted_markdown_for_existing_week(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_reminder(week_key, "Confirm rollout checklist.")
+
+        diary_mod.set_reminder_completed(week_key, 1, True)
+
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+        assert "- [x] Confirm rollout checklist." in markdown
+        assert "*(no reminders for this week)*" not in markdown
+
     def test_get_diary_markdown_shows_empty_reminder_placeholder(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.get_or_create_page_for_week(week_key)

@@ -352,14 +352,27 @@ def _save_reminder_state(state: ReminderState) -> None:
     json_content = json.dumps(validated, indent=2, ensure_ascii=False)
     _atomic_write_text(_reminders_path(), json_content)
 
+    for week_key in validated["reminders"]:
+        diary_path = _diary_path(week_key)
+        if diary_path.exists():
+            _save_state(_load_state(week_key))
+
 
 def _save_state(state: DiaryState) -> None:
     from work_diary_mcp.markdown import render_diary  # avoid circular import
 
     validated = _validate_state(state)
     week_key = validated["weekKey"]
+    reminder_state = _load_reminder_state()
+    reminders = reminder_state["reminders"].get(week_key, [])
+
     json_content = json.dumps(validated, indent=2, ensure_ascii=False)
-    markdown_content = render_diary(validated)
+    markdown_content = render_diary(
+        {
+            **validated,
+            "reminders": reminders,
+        }
+    )
 
     _atomic_write_text(_diary_path(week_key), json_content)
     _atomic_write_text(_markdown_path(week_key), markdown_content)
