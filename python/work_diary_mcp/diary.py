@@ -5,7 +5,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from work_diary_mcp.config import get_data_dir
 from work_diary_mcp.jira import linkify_jira_refs
@@ -18,6 +18,7 @@ from work_diary_mcp.statuses import is_completed
 
 class NoteEntry(TypedDict):
     content: str
+    timestamp: NotRequired[str]
 
 
 class DiaryState(TypedDict):
@@ -27,11 +28,11 @@ class DiaryState(TypedDict):
     notes: list[NoteEntry]
 
 
-class ProjectUpdate(TypedDict, total=False):
+class ProjectUpdate(TypedDict):
     project: str
     status: str
-    note: str | None
-    append_note: bool
+    note: NotRequired[str | None]
+    append_note: NotRequired[bool]
 
 
 # --------------------------------------------------------------------------- #
