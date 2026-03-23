@@ -484,7 +484,7 @@ def set_reminder_completed(week_key: str, index: int, completed: bool) -> None:
                 f"Reminder index {index} is out of range — "
                 f"there {'is' if len(reminders) == 1 else 'are'} "
                 f"{len(reminders)} reminder{'s' if len(reminders) != 1 else ''} "
-                f"in the diary for the week of {get_week_label(normalized_week_key)}."
+                f"for the week of {get_week_label(normalized_week_key)}."
             )
 
         reminders[index - 1]["completed"] = completed
