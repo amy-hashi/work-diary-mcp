@@ -2,40 +2,24 @@ from __future__ import annotations
 
 import re
 
+from work_diary_mcp.config import get_jira_base_url, get_jira_prefixes
+
 # --------------------------------------------------------------------------- #
 # Constants
 # --------------------------------------------------------------------------- #
 
-JIRA_BASE_URL = "https://hashicorp.atlassian.net/browse"
-
-# Known Jira project prefixes.  Add new prefixes here as needed.
-_KNOWN_PREFIXES: tuple[str, ...] = (
-    "TF",
-    "RDPR",
-    "TFDN",
-    "SECGRC",
-    "IND",
-    "CAG",
-)
-
-_PREFIX_ALTERNATION = "|".join(re.escape(p) for p in _KNOWN_PREFIXES)
-
 # Matches any Markdown link: [label](url)
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 
-# Matches a bare Jira ticket reference — applied only to plain-text segments
-# (after existing Markdown links have been extracted and protected).
-#
-# Pattern breakdown:
-#   \b           — word boundary before the prefix
-#   (PREFIX)     — one of the known project prefixes (case-insensitive)
-#   -            — literal hyphen
-#   (\d{3,})     — three or more digits
-#   \b           — word boundary after the digits
-_BARE_TICKET_RE = re.compile(
-    rf"\b({_PREFIX_ALTERNATION})-(\d{{3,}})\b",
-    re.IGNORECASE,
-)
+
+def _bare_ticket_re() -> re.Pattern[str]:
+    """Build the Jira ticket regex from the configured prefixes."""
+    prefixes = get_jira_prefixes()
+    prefix_alternation = "|".join(re.escape(p) for p in prefixes)
+    return re.compile(
+        rf"\b({prefix_alternation})-(\d{{3,}})\b",
+        re.IGNORECASE,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -60,14 +44,14 @@ def linkify_jira_refs(text: str) -> str:
 
     Examples::
 
-        >>> linkify_jira_refs("CAG-516")
-        '[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)'
+        >>> linkify_jira_refs("PROJ-1234")
+        '[PROJ-1234](https://jira.example.com/browse/PROJ-1234)'
 
-        >>> linkify_jira_refs("see [TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)")
-        'see [TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)'
+        >>> linkify_jira_refs("see [PROJ-1234](https://jira.example.com/browse/PROJ-1234)")
+        'see [PROJ-1234](https://jira.example.com/browse/PROJ-1234)'
 
-        >>> linkify_jira_refs("blocked by TF-34398 and RDPR-1234")
-        'blocked by [TF-34398](https://hashicorp.atlassian.net/browse/TF-34398) and [RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)'
+        >>> linkify_jira_refs("blocked by PROJ-1234 and INFRA-5678")
+        'blocked by [PROJ-1234](https://jira.example.com/browse/PROJ-1234) and [INFRA-5678](https://jira.example.com/browse/INFRA-5678)'
 
     Args:
         text: The string to process.
@@ -100,11 +84,13 @@ def linkify_jira_refs(text: str) -> str:
 
 def _linkify_plain(text: str) -> str:
     """Linkify bare Jira ticket references in a plain-text (non-link) segment."""
+    bare_ticket_re = _bare_ticket_re()
+    jira_base_url = get_jira_base_url()
 
     def _replace(m: re.Match) -> str:
         prefix = m.group(1).upper()
         number = m.group(2)
         ticket = f"{prefix}-{number}"
-        return f"[{ticket}]({JIRA_BASE_URL}/{ticket})"
+        return f"[{ticket}]({jira_base_url}/{ticket})"
 
-    return _BARE_TICKET_RE.sub(_replace, text)
+    return bare_ticket_re.sub(_replace, text)

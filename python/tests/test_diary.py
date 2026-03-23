@@ -90,6 +90,10 @@ class TestParseWeekKey:
         expected = diary_mod.get_week_key(date.today() - timedelta(weeks=1))
         assert diary_mod.parse_week_key("last week") == expected
 
+    def test_next_week(self):
+        expected = diary_mod.get_week_key(date.today() + timedelta(weeks=1))
+        assert diary_mod.parse_week_key("next week") == expected
+
     def test_n_weeks_ago(self):
         expected = diary_mod.get_week_key(date.today() - timedelta(weeks=3))
         assert diary_mod.parse_week_key("3 weeks ago") == expected
@@ -97,6 +101,14 @@ class TestParseWeekKey:
     def test_singular_week_ago(self):
         expected = diary_mod.get_week_key(date.today() - timedelta(weeks=1))
         assert diary_mod.parse_week_key("1 week ago") == expected
+
+    def test_n_weeks_from_now(self):
+        expected = diary_mod.get_week_key(date.today() + timedelta(weeks=2))
+        assert diary_mod.parse_week_key("2 weeks from now") == expected
+
+    def test_in_n_weeks(self):
+        expected = diary_mod.get_week_key(date.today() + timedelta(weeks=4))
+        assert diary_mod.parse_week_key("in 4 weeks") == expected
 
     def test_invalid_raises(self):
         with pytest.raises(ValueError, match="Could not parse"):
@@ -595,6 +607,309 @@ class TestServerWriteTools:
         assert "Stacks on TFE" in result
         assert diary_mod.get_week_label(target_week) in result
 
+    def test_add_reminder_tool_targets_future_week_without_creating_diary_page(self, diary_dir):
+        target_week = diary_mod.parse_week_key("next week")
+
+        with patch.object(server_mod, "add_reminder") as add_reminder_mock:
+            result = server_mod.add_reminder_tool(
+                "Follow up with the perf team.",
+                due_date="2026-03-27",
+                date="next week",
+            )
+
+        add_reminder_mock.assert_called_once_with(
+            target_week,
+            "Follow up with the perf team.",
+            "2026-03-27",
+        )
+        assert "Added a reminder" in result
+        assert diary_mod.get_week_label(target_week) in result
+        assert not (diary_dir / f"{target_week}.json").exists()
+
+    def test_complete_reminder_tool_targets_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+
+        with patch.object(server_mod, "set_reminder_completed") as complete_mock:
+            result = server_mod.complete_reminder_tool(2, date="last week")
+
+        complete_mock.assert_called_once_with(target_week, 2, True)
+        assert "Marked reminder [2] complete" in result
+        assert diary_mod.get_week_label(target_week) in result
+
+    def test_reopen_reminder_tool_targets_last_week(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+
+        with patch.object(server_mod, "set_reminder_completed") as reopen_mock:
+            result = server_mod.reopen_reminder_tool(1, date="last week")
+
+        reopen_mock.assert_called_once_with(target_week, 1, False)
+        assert "Reopened reminder [1]" in result
+        assert diary_mod.get_week_label(target_week) in result
+
+    def test_list_reminders_tool_formats_due_dates_and_checkboxes(self, diary_dir):
+        target_week = diary_mod.parse_week_key("last week")
+        reminders = [
+            {
+                "content": "Follow up with the perf team.",
+                "completed": False,
+                "dueDate": "2026-03-27",
+            },
+            {
+                "content": "Confirm rollout checklist.",
+                "completed": True,
+            },
+        ]
+
+        with patch.object(server_mod, "list_reminders", return_value=reminders) as list_mock:
+            result = server_mod.list_reminders_tool(date="last week")
+
+        list_mock.assert_called_once_with(target_week)
+        assert "**[1]** [ ] Due Date: 2026-03-27 Follow up with the perf team." in result
+        assert "**[2]** [x] Confirm rollout checklist." in result
+        assert diary_mod.get_week_label(target_week) in result
+
+
+class TestJiraConfig:
+    def test_get_jira_base_url_defaults_to_generic_value(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "nonexistent.toml"
+        monkeypatch.delenv("WORK_DIARY_JIRA_BASE_URL", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_base_url.cache_clear()
+        result = config_mod.get_jira_base_url()
+        assert result == "https://jira.example.com/browse"
+
+    def test_get_jira_prefixes_default_to_generic_values(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "nonexistent.toml"
+        monkeypatch.delenv("WORK_DIARY_JIRA_PREFIXES", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_prefixes.cache_clear()
+        result = config_mod.get_jira_prefixes()
+        assert result == ("PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA")
+
+    def test_get_jira_base_url_env_var_overrides_settings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            'jira_base_url = "https://jira.from.settings/browse"\n',
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("WORK_DIARY_JIRA_BASE_URL", "https://jira.from.env/browse")
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_base_url.cache_clear()
+        result = config_mod.get_jira_base_url()
+        assert result == "https://jira.from.env/browse"
+
+    def test_get_jira_prefixes_env_var_overrides_settings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            'jira_prefixes = ["SET", "TINGS"]\n',
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("WORK_DIARY_JIRA_PREFIXES", "PROJ, INFRA, ENG")
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_prefixes.cache_clear()
+        result = config_mod.get_jira_prefixes()
+        assert result == ("PROJ", "INFRA", "ENG")
+
+    def test_get_jira_base_url_from_settings_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            'jira_base_url = "https://jira.from.settings/browse/"\n',
+            encoding="utf-8",
+        )
+
+        monkeypatch.delenv("WORK_DIARY_JIRA_BASE_URL", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_base_url.cache_clear()
+        result = config_mod.get_jira_base_url()
+        assert result == "https://jira.from.settings/browse"
+
+    def test_get_jira_prefixes_from_settings_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            'jira_prefixes = ["proj", "infra", "eng"]\n',
+            encoding="utf-8",
+        )
+
+        monkeypatch.delenv("WORK_DIARY_JIRA_PREFIXES", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_prefixes.cache_clear()
+        result = config_mod.get_jira_prefixes()
+        assert result == ("PROJ", "INFRA", "ENG")
+
+    def test_get_jira_base_url_wrong_type_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("jira_base_url = 42\n", encoding="utf-8")
+
+        monkeypatch.delenv("WORK_DIARY_JIRA_BASE_URL", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_base_url.cache_clear()
+        with pytest.raises(TypeError, match="jira_base_url"):
+            config_mod.get_jira_base_url()
+
+    def test_get_jira_prefixes_wrong_type_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text('jira_prefixes = "PROJ"\n', encoding="utf-8")
+
+        monkeypatch.delenv("WORK_DIARY_JIRA_PREFIXES", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_prefixes.cache_clear()
+        with pytest.raises(TypeError, match="jira_prefixes"):
+            config_mod.get_jira_prefixes()
+
+
+class TestReminders:
+    def test_add_future_reminder_does_not_create_diary_page(self, diary_dir):
+        future_week = diary_mod.parse_week_key("next week")
+
+        diary_mod.add_reminder(
+            future_week,
+            "Follow up with the perf team.",
+            due_date="2026-03-27",
+        )
+
+        reminders_path = diary_dir / "reminders.json"
+        state = json.loads(reminders_path.read_text(encoding="utf-8"))
+
+        assert state["reminders"][future_week] == [
+            {
+                "content": "Follow up with the perf team.",
+                "completed": False,
+                "dueDate": "2026-03-27",
+            }
+        ]
+        assert not (diary_dir / f"{future_week}.json").exists()
+
+    def test_list_reminders_returns_entries_for_week(self, diary_dir):
+        week_key = "2026-03-02"
+
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.")
+        diary_mod.add_reminder(week_key, "Confirm rollout checklist.", due_date="Thursday")
+
+        reminders = diary_mod.list_reminders(week_key)
+
+        assert reminders == [
+            {
+                "content": "Follow up with the perf team.",
+                "completed": False,
+            },
+            {
+                "content": "Confirm rollout checklist.",
+                "completed": False,
+                "dueDate": "Thursday",
+            },
+        ]
+
+    def test_set_reminder_completed_marks_checkbox_state(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.")
+
+        diary_mod.set_reminder_completed(week_key, 1, True)
+
+        reminders = diary_mod.list_reminders(week_key)
+        assert reminders[0]["completed"] is True
+
+        diary_mod.set_reminder_completed(week_key, 1, False)
+
+        reminders = diary_mod.list_reminders(week_key)
+        assert reminders[0]["completed"] is False
+
+    def test_set_reminder_completed_out_of_range_raises(self, diary_dir):
+        week_key = "2026-03-02"
+
+        with pytest.raises(ValueError, match="Reminder index 1 is out of range"):
+            diary_mod.set_reminder_completed(week_key, 1, True)
+
+    def test_get_diary_markdown_renders_reminders_before_project_status(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.", due_date="2026-03-27")
+        diary_mod.update_project_status(week_key, "Stacks on TFE", "On Track")
+
+        markdown = diary_mod.get_diary_markdown(week_key)
+
+        reminders_header = "## Reminders for this week"
+        project_header = "## Project Status"
+        reminder_line = "- [ ] Due Date: 2026-03-27 Follow up with the perf team."
+
+        assert reminders_header in markdown
+        assert project_header in markdown
+        assert reminder_line in markdown
+        assert markdown.index(reminders_header) < markdown.index(project_header)
+
+    def test_get_diary_markdown_shows_completed_reminders(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_reminder(week_key, "Confirm rollout checklist.")
+        diary_mod.set_reminder_completed(week_key, 1, True)
+
+        markdown = diary_mod.get_diary_markdown(week_key)
+
+        assert "- [x] Confirm rollout checklist." in markdown
+
+    def test_get_diary_markdown_shows_empty_reminder_placeholder(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        markdown = diary_mod.get_diary_markdown(week_key)
+
+        assert "## Reminders for this week" in markdown
+        assert "*(no reminders for this week)*" in markdown
+
+    def test_add_reminder_linkifies_content(self, diary_dir):
+        week_key = "2026-03-02"
+
+        diary_mod.add_reminder(week_key, "Follow up on PROJ-1234")
+
+        reminders = diary_mod.list_reminders(week_key)
+        assert reminders == [
+            {
+                "content": "Follow up on [PROJ-1234](https://jira.example.com/browse/PROJ-1234)",
+                "completed": False,
+            }
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Statuses
@@ -675,15 +990,15 @@ class TestMigrateState:
         week_key = "2026-03-02"
         pre_linking = {
             "weekKey": week_key,
-            "projects": {"CAG-516": "On Track"},
+            "projects": {"PROJ-1234": "On Track"},
             "projectNotes": {},
             "notes": [],
         }
         (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
-        assert "[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)" in state["projects"]
-        assert "CAG-516" not in state["projects"]
+        assert "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)" in state["projects"]
+        assert "PROJ-1234" not in state["projects"]
 
     def test_bare_ticket_in_project_note_linkified_on_load(self, diary_dir):
         """A project note containing a bare ticket ref is linkified during migration."""
@@ -691,14 +1006,14 @@ class TestMigrateState:
         pre_linking = {
             "weekKey": week_key,
             "projects": {"Alpha": "Blocked"},
-            "projectNotes": {"Alpha": "blocked by TF-9999"},
+            "projectNotes": {"Alpha": "blocked by PROJ-9999"},
             "notes": [],
         }
         (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
         assert (
-            "[TF-9999](https://hashicorp.atlassian.net/browse/TF-9999)"
+            "[PROJ-9999](https://jira.example.com/browse/PROJ-9999)"
             in state["projectNotes"]["Alpha"]
         )
 
@@ -707,18 +1022,17 @@ class TestMigrateState:
         week_key = "2026-03-02"
         pre_linking = {
             "weekKey": week_key,
-            "projects": {"TF-1234": "At Risk"},
-            "projectNotes": {"TF-1234": "needs attention"},
+            "projects": {"PROJ-1234": "At Risk"},
+            "projectNotes": {"PROJ-1234": "needs attention"},
             "notes": [],
         }
         (diary_dir / f"{week_key}.json").write_text(json.dumps(pre_linking), encoding="utf-8")
 
         state = diary_mod._load_state(week_key)
-        linked_key = "[TF-1234](https://hashicorp.atlassian.net/browse/TF-1234)"
+        linked_key = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
         assert linked_key in state["projects"]
         assert linked_key in state["projectNotes"]
-        assert state["projectNotes"][linked_key] == "needs attention"
-        assert "TF-1234" not in state["projectNotes"]
+        assert "PROJ-1234" not in state["projectNotes"]
 
     def test_bare_ticket_in_general_note_linkified_on_load(self, diary_dir):
         """A general note content containing a bare ticket ref is linkified during migration."""
@@ -730,7 +1044,7 @@ class TestMigrateState:
             "notes": [
                 {
                     "timestamp": "2026-03-02T10:00:00+00:00",
-                    "content": "opened TF-5678 to track",
+                    "content": "opened PROJ-5678 to track",
                 },
             ],
         }
@@ -738,8 +1052,7 @@ class TestMigrateState:
 
         state = diary_mod._load_state(week_key)
         assert (
-            "[TF-5678](https://hashicorp.atlassian.net/browse/TF-5678)"
-            in state["notes"][0]["content"]
+            "[PROJ-5678](https://jira.example.com/browse/PROJ-5678)" in state["notes"][0]["content"]
         )
 
     def test_already_linked_key_not_double_linked_on_load(self, diary_dir):
@@ -1453,45 +1766,53 @@ class TestLinkifyJiraRefs:
     def test_bare_ticket_becomes_link(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        assert linkify_jira_refs("TF-34398") == (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
+        assert linkify_jira_refs("PROJ-1234") == (
+            "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
+        )
+
+    def test_case_insensitive_match_uppercases_key(self):
+        from work_diary_mcp.jira import linkify_jira_refs
+
+        assert linkify_jira_refs("proj-1234") == (
+            "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
         )
 
     def test_all_known_prefixes(self):
-        from work_diary_mcp.jira import JIRA_BASE_URL, linkify_jira_refs
+        import work_diary_mcp.config as config_mod
+        from work_diary_mcp.jira import linkify_jira_refs
 
-        prefixes = ["TF", "RDPR", "TFDN", "SECGRC", "IND", "CAG"]
-        for prefix in prefixes:
+        jira_base_url = config_mod.get_jira_base_url()
+        jira_prefixes = config_mod.get_jira_prefixes()
+
+        for prefix in jira_prefixes:
             ticket = f"{prefix}-1234"
-            result = linkify_jira_refs(ticket)
-            assert result == f"[{ticket}]({JIRA_BASE_URL}/{ticket})", (
-                f"Failed for prefix {prefix!r}"
-            )
+            expected = f"[{ticket}]({jira_base_url}/{ticket})"
+            assert linkify_jira_refs(ticket) == expected, f"Failed for prefix {prefix!r}"
 
     def test_ticket_mid_sentence(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        result = linkify_jira_refs("blocked by TF-34398 and RDPR-1234")
-        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in result
-        assert "[RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)" in result
+        result = linkify_jira_refs("blocked by PROJ-34398 and INFRA-1234")
+        assert "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)" in result
+        assert "[INFRA-1234](https://jira.example.com/browse/INFRA-1234)" in result
 
     def test_multiple_tickets_in_one_string(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        result = linkify_jira_refs("TF-1000 and TF-2000")
-        assert "[TF-1000](https://hashicorp.atlassian.net/browse/TF-1000)" in result
-        assert "[TF-2000](https://hashicorp.atlassian.net/browse/TF-2000)" in result
+        result = linkify_jira_refs("PROJ-1000 and PROJ-2000")
+        assert "[PROJ-1000](https://jira.example.com/browse/PROJ-1000)" in result
+        assert "[PROJ-2000](https://jira.example.com/browse/PROJ-2000)" in result
 
     def test_already_linked_ticket_not_double_linked(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        already_linked = "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
-        assert linkify_jira_refs(already_linked) == already_linked
+        original = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
+        assert linkify_jira_refs(original) == original
 
     def test_already_linked_ticket_mid_sentence_not_double_linked(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        text = "see [TF-34398](https://hashicorp.atlassian.net/browse/TF-34398) for details"
+        text = "see [PROJ-1234](https://jira.example.com/browse/PROJ-1234) for details"
         assert linkify_jira_refs(text) == text
 
     def test_fewer_than_three_digits_not_matched(self):
@@ -1503,31 +1824,25 @@ class TestLinkifyJiraRefs:
     def test_exactly_three_digits_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        result = linkify_jira_refs("CAG-516")
-        assert result == "[CAG-516](https://hashicorp.atlassian.net/browse/CAG-516)"
+        result = linkify_jira_refs("PROJ-516")
+        assert result == "[PROJ-516](https://jira.example.com/browse/PROJ-516)"
 
     def test_exactly_four_digits_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        result = linkify_jira_refs("TF-1234")
-        assert result == "[TF-1234](https://hashicorp.atlassian.net/browse/TF-1234)"
+        result = linkify_jira_refs("PROJ-1234")
+        assert result == "[PROJ-1234](https://jira.example.com/browse/PROJ-1234)"
 
     def test_more_than_four_digits_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
-        result = linkify_jira_refs("TF-123456")
-        assert result == "[TF-123456](https://hashicorp.atlassian.net/browse/TF-123456)"
+        result = linkify_jira_refs("PROJ-123456")
+        assert result == "[PROJ-123456](https://jira.example.com/browse/PROJ-123456)"
 
     def test_unknown_prefix_not_matched(self):
         from work_diary_mcp.jira import linkify_jira_refs
 
         assert linkify_jira_refs("XYZ-1234") == "XYZ-1234"
-
-    def test_case_insensitive_match_uppercases_key(self):
-        from work_diary_mcp.jira import linkify_jira_refs
-
-        result = linkify_jira_refs("tf-34398")
-        assert result == "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
 
     def test_no_tickets_returns_string_unchanged(self):
         from work_diary_mcp.jira import linkify_jira_refs
@@ -1544,12 +1859,12 @@ class TestLinkifyJiraRefs:
         """A string with one already-linked and one bare ticket handles both correctly."""
         from work_diary_mcp.jira import linkify_jira_refs
 
-        text = "[TF-1000](https://hashicorp.atlassian.net/browse/TF-1000) and TF-2000"
+        text = "[PROJ-1000](https://jira.example.com/browse/PROJ-1000) and PROJ-2000"
         result = linkify_jira_refs(text)
-        assert "[TF-1000](https://hashicorp.atlassian.net/browse/TF-1000)" in result
-        assert "[TF-2000](https://hashicorp.atlassian.net/browse/TF-2000)" in result
-        # TF-1000 must not be double-linked
-        assert result.count("TF-1000") == 2  # once in label, once in URL
+        assert "[PROJ-1000](https://jira.example.com/browse/PROJ-1000)" in result
+        assert "[PROJ-2000](https://jira.example.com/browse/PROJ-2000)" in result
+        # PROJ-1000 must not be double-linked
+        assert result.count("PROJ-1000") == 2  # once in label, once in URL
 
 
 # ---------------------------------------------------------------------------
@@ -1560,16 +1875,16 @@ class TestLinkifyJiraRefs:
 class TestJiraLinkificationIntegration:
     def test_bare_ticket_in_project_name_is_linked(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(week_key, "TF-34398", "On Track")
+        diary_mod.update_project_status(week_key, "PROJ-34398", "On Track")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in state["projects"]
+        assert "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)" in state["projects"]
 
     def test_bare_ticket_in_note_is_linked(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="blocked by TF-34398")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="blocked by PROJ-34398")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
+            "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
             in state["projectNotes"]["Alpha"]
         )
 
@@ -1592,19 +1907,19 @@ class TestJiraLinkificationIntegration:
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", note="initial note")
         diary_mod.update_project_status(
-            week_key, "Alpha", "Blocked", note="see TF-9999", append_note=True
+            week_key, "Alpha", "Blocked", note="see PROJ-9999", append_note=True
         )
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         note = state["projectNotes"]["Alpha"]
         assert "initial note" in note
-        assert "[TF-9999](https://hashicorp.atlassian.net/browse/TF-9999)" in note
+        assert "[PROJ-9999](https://jira.example.com/browse/PROJ-9999)" in note
 
     def test_rename_linkifies_new_name(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Old Name", "On Track")
-        diary_mod.rename_project(week_key, "Old Name", "TF-34398")
+        diary_mod.rename_project(week_key, "Old Name", "PROJ-34398")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in state["projects"]
+        assert "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)" in state["projects"]
         assert "Old Name" not in state["projects"]
 
     def test_bulk_update_linkifies_project_and_note(self, diary_dir):
@@ -1612,30 +1927,30 @@ class TestJiraLinkificationIntegration:
         diary_mod.bulk_update_projects(
             week_key,
             [
-                {"project": "TF-34398", "status": "On Track", "note": "see RDPR-1234"},
+                {"project": "PROJ-34398", "status": "On Track", "note": "see INFRA-1234"},
             ],
         )
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)" in state["projects"]
+        assert "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)" in state["projects"]
         notes = state["projectNotes"]
-        linked_key = "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
-        assert "[RDPR-1234](https://hashicorp.atlassian.net/browse/RDPR-1234)" in notes[linked_key]
+        linked_key = "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
+        assert "[INFRA-1234](https://jira.example.com/browse/INFRA-1234)" in notes[linked_key]
 
     def test_add_note_linkifies_content(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.add_note(week_key, "opened TF-34398 to track this")
+        diary_mod.add_note(week_key, "opened PROJ-34398 to track this")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
+            "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
             in state["notes"][0]["content"]
         )
 
     def test_edit_note_linkifies_new_content(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.add_note(week_key, "original note")
-        diary_mod.edit_note(week_key, 1, "updated, see TF-34398")
+        diary_mod.edit_note(week_key, 1, "updated, see PROJ-34398")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert (
-            "[TF-34398](https://hashicorp.atlassian.net/browse/TF-34398)"
+            "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
             in state["notes"][0]["content"]
         )

@@ -5,6 +5,7 @@ from fastmcp.exceptions import ToolError
 
 from work_diary_mcp.diary import (
     add_note,
+    add_reminder,
     bulk_update_projects,
     clear_project_note,
     delete_note,
@@ -15,10 +16,12 @@ from work_diary_mcp.diary import (
     get_week_key,
     get_week_label,
     list_projects,
+    list_reminders,
     list_week_keys,
     parse_week_key,
     remove_project,
     rename_project,
+    set_reminder_completed,
     update_project_status,
 )
 
@@ -49,7 +52,8 @@ mcp = FastMCP(
         "## Target week\n\n"
         "Write operations default to the current week, but may also target a specific "
         "week when the user says things like 'last week', '2 weeks ago', or provides "
-        "an ISO date such as '2026-03-02'.\n\n"
+        "an ISO date such as '2026-03-02'. Future reminders should be stored without "
+        "creating a future diary page.\n\n"
         "## Timestamps\n\n"
         "Do not add timestamps to notes automatically. Only include a date or time in "
         "a note if the user explicitly mentions one."
@@ -133,7 +137,7 @@ def update_project_status_tool(
 @mcp.tool(annotations={"readOnlyHint": False})
 def bulk_update_projects_tool(
     updates: Annotated[
-        list[dict],
+        list[dict[str, object]],
         "List of project updates. Each item must have 'project' (str) and "
         "'status' (str), and may optionally include 'note' (str) and "
         "'append_note' (bool, default false).",
@@ -348,6 +352,107 @@ def delete_note_tool(
             f"🗑️ Deleted note [{index}] from your diary "
             f"for the week of **{page['week_label']}**: '{deleted}'"
         )
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False})
+def add_reminder_tool(
+    content: Annotated[str, "The reminder content to add."],
+    due_date: Annotated[
+        str | None,
+        "Optional due date to render before the reminder text, exactly as provided.",
+    ] = None,
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's reminders. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', 'next week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
+) -> str:
+    """Add a reminder for a specific week without creating a future diary page."""
+    try:
+        week_key = parse_week_key(date) if date else get_week_key()
+        week_label = get_week_label(week_key)
+        add_reminder(week_key, content, due_date)
+        return f"⏰ Added a reminder for the week of **{week_label}**."
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def list_reminders_tool(
+    date: Annotated[
+        str | None,
+        "Optional date to list reminders for a specific week. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
+) -> str:
+    """List all reminders for the target week."""
+    try:
+        week_key = parse_week_key(date) if date else get_week_key()
+        week_label = get_week_label(week_key)
+        reminders = list_reminders(week_key)
+
+        if not reminders:
+            return f"No reminders found for the week of **{week_label}**."
+
+        lines = []
+        for i, reminder in enumerate(reminders, start=1):
+            checkbox = "[x]" if reminder.get("completed", False) else "[ ]"
+            due_date = reminder.get("dueDate")
+            content = reminder.get("content", "")
+            due_prefix = f"Due Date: {due_date} " if due_date else ""
+            lines.append(f"- **[{i}]** {checkbox} {due_prefix}{content}")
+
+        return f"Reminders for the week of **{week_label}**:\n\n" + "\n".join(lines)
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+def complete_reminder_tool(
+    index: Annotated[
+        int,
+        "The 1-based index of the reminder to mark complete, as shown by list_reminders.",
+    ],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's reminders. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
+) -> str:
+    """Mark a reminder as completed."""
+    try:
+        week_key = parse_week_key(date) if date else get_week_key()
+        week_label = get_week_label(week_key)
+        set_reminder_completed(week_key, index, True)
+        return f"✅ Marked reminder [{index}] complete for the week of **{week_label}**."
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+def reopen_reminder_tool(
+    index: Annotated[
+        int,
+        "The 1-based index of the reminder to mark incomplete, as shown by list_reminders.",
+    ],
+    date: Annotated[
+        str | None,
+        "Optional date to target a specific week's reminders. "
+        "Accepts ISO dates (e.g. '2026-03-02'), 'last week', or 'N weeks ago'. "
+        "Defaults to the current week.",
+    ] = None,
+) -> str:
+    """Mark a completed reminder as incomplete."""
+    try:
+        week_key = parse_week_key(date) if date else get_week_key()
+        week_label = get_week_label(week_key)
+        set_reminder_completed(week_key, index, False)
+        return f"↩️ Reopened reminder [{index}] for the week of **{week_label}**."
     except Exception as e:
         raise ToolError(str(e)) from e
 

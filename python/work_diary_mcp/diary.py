@@ -21,11 +21,21 @@ class NoteEntry(TypedDict):
     timestamp: NotRequired[str]
 
 
+class ReminderEntry(TypedDict):
+    content: str
+    completed: bool
+    dueDate: NotRequired[str]
+
+
 class DiaryState(TypedDict):
     weekKey: str
     projects: dict[str, str]
     projectNotes: dict[str, str]
     notes: list[NoteEntry]
+
+
+class ReminderState(TypedDict):
+    reminders: dict[str, list[ReminderEntry]]
 
 
 class ProjectUpdate(TypedDict):
@@ -63,17 +73,32 @@ def parse_week_key(input_str: str) -> str:
     Accepts:
       - ISO dates:       '2026-03-02'
       - 'last week'
+      - 'next week'
       - 'N weeks ago'   e.g. '2 weeks ago'
+      - 'N weeks from now' / 'in N weeks'
     """
     lowered = input_str.strip().lower()
 
     if lowered == "last week":
         return get_week_key(date.today() - timedelta(weeks=1))
 
+    if lowered == "next week":
+        return get_week_key(date.today() + timedelta(weeks=1))
+
     m = re.match(r"^(\d+)\s+weeks?\s+ago$", lowered)
     if m:
         n = int(m.group(1))
         return get_week_key(date.today() - timedelta(weeks=n))
+
+    m = re.match(r"^(\d+)\s+weeks?\s+from\s+now$", lowered)
+    if m:
+        n = int(m.group(1))
+        return get_week_key(date.today() + timedelta(weeks=n))
+
+    m = re.match(r"^in\s+(\d+)\s+weeks?$", lowered)
+    if m:
+        n = int(m.group(1))
+        return get_week_key(date.today() + timedelta(weeks=n))
 
     try:
         return get_week_key(date.fromisoformat(input_str.strip()))
@@ -82,7 +107,7 @@ def parse_week_key(input_str: str) -> str:
 
     raise ValueError(
         f'Could not parse "{input_str}" as a date. '
-        'Try a format like "2026-03-02", "last week", or "2 weeks ago".'
+        'Try a format like "2026-03-02", "last week", "next week", or "2 weeks ago".'
     )
 
 
@@ -99,6 +124,10 @@ def _markdown_path(week_key: str) -> Path:
     return get_data_dir() / f"{week_key}.md"
 
 
+def _reminders_path() -> Path:
+    return get_data_dir() / "reminders.json"
+
+
 # --------------------------------------------------------------------------- #
 # State management
 # --------------------------------------------------------------------------- #
@@ -106,6 +135,10 @@ def _markdown_path(week_key: str) -> Path:
 
 def _empty_state(week_key: str) -> DiaryState:
     return {"weekKey": week_key, "projects": {}, "projectNotes": {}, "notes": []}
+
+
+def _empty_reminder_state() -> ReminderState:
+    return {"reminders": {}}
 
 
 def _validate_state(state: DiaryState, week_key: str | None = None) -> DiaryState:
@@ -157,6 +190,39 @@ def _validate_state(state: DiaryState, week_key: str | None = None) -> DiaryStat
     return state
 
 
+def _validate_reminder_state(state: ReminderState) -> ReminderState:
+    """Validate and normalize the reminder state."""
+    if not isinstance(state, dict):
+        raise ValueError("Reminder state must be a JSON object.")
+
+    reminders = state.get("reminders")
+    if reminders is None:
+        reminders = {}
+        state["reminders"] = reminders
+    if not isinstance(reminders, dict):
+        raise ValueError("Reminder state field 'reminders' must be an object.")
+
+    for week_key, entries in reminders.items():
+        if not isinstance(week_key, str):
+            raise ValueError("Reminder week keys must be strings.")
+        if not isinstance(entries, list):
+            raise ValueError("Reminder state must map week keys to lists.")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError("Each reminder entry must be an object.")
+            content = entry.get("content")
+            completed = entry.get("completed")
+            due_date = entry.get("dueDate")
+            if not isinstance(content, str):
+                raise ValueError("Each reminder entry must contain a string 'content' field.")
+            if not isinstance(completed, bool):
+                raise ValueError("Each reminder entry must contain a boolean 'completed' field.")
+            if due_date is not None and not isinstance(due_date, str):
+                raise ValueError("Reminder entry field 'dueDate' must be a string if present.")
+
+    return state
+
+
 def _migrate_state(state: DiaryState) -> DiaryState:
     """Ensure older diary files load cleanly and have all fields linkified.
 
@@ -186,6 +252,28 @@ def _migrate_state(state: DiaryState) -> DiaryState:
     for entry in state.get("notes", []):
         entry["content"] = linkify_jira_refs(entry["content"])
 
+    return state
+
+
+def _migrate_reminder_state(state: ReminderState) -> ReminderState:
+    """Ensure reminder entries load cleanly and linkify reminder text."""
+    state.setdefault("reminders", {})
+
+    new_reminders: dict[str, list[ReminderEntry]] = {}
+    for week_key, entries in state["reminders"].items():
+        new_entries: list[ReminderEntry] = []
+        for entry in entries:
+            new_entry: ReminderEntry = {
+                "content": linkify_jira_refs(entry["content"]),
+                "completed": entry["completed"],
+            }
+            due_date = entry.get("dueDate")
+            if due_date is not None:
+                new_entry["dueDate"] = due_date
+            new_entries.append(new_entry)
+        new_reminders[week_key] = new_entries
+
+    state["reminders"] = new_reminders
     return state
 
 
@@ -250,6 +338,21 @@ def _load_state(week_key: str) -> DiaryState:
     return _empty_state(week_key)
 
 
+def _load_reminder_state() -> ReminderState:
+    path = _reminders_path()
+    if path.exists():
+        raw_state = json.loads(path.read_text(encoding="utf-8"))
+        validated = _validate_reminder_state(raw_state)
+        return _migrate_reminder_state(validated)
+    return _empty_reminder_state()
+
+
+def _save_reminder_state(state: ReminderState) -> None:
+    validated = _validate_reminder_state(state)
+    json_content = json.dumps(validated, indent=2, ensure_ascii=False)
+    _atomic_write_text(_reminders_path(), json_content)
+
+
 def _save_state(state: DiaryState) -> None:
     from work_diary_mcp.markdown import render_diary  # avoid circular import
 
@@ -294,6 +397,47 @@ def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
+
+
+def list_reminders(week_key: str) -> list[ReminderEntry]:
+    """Return reminders for the given week."""
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    state = _load_reminder_state()
+    return list(state["reminders"].get(normalized_week_key, []))
+
+
+def add_reminder(week_key: str, content: str, due_date: str | None = None) -> None:
+    """Add a reminder for the specified week without creating a diary page."""
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    state = _load_reminder_state()
+
+    entry: ReminderEntry = {
+        "content": linkify_jira_refs(content),
+        "completed": False,
+    }
+    if due_date is not None:
+        entry["dueDate"] = due_date
+
+    state["reminders"].setdefault(normalized_week_key, []).append(entry)
+    _save_reminder_state(state)
+
+
+def set_reminder_completed(week_key: str, index: int, completed: bool) -> None:
+    """Set the completion state of a reminder by its 1-based index."""
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    state = _load_reminder_state()
+    reminders = state["reminders"].get(normalized_week_key, [])
+
+    if not (1 <= index <= len(reminders)):
+        raise ValueError(
+            f"Reminder index {index} is out of range — "
+            f"there {'is' if len(reminders) == 1 else 'are'} "
+            f"{len(reminders)} reminder{'s' if len(reminders) != 1 else ''} "
+            f"in the diary for the week of {get_week_label(normalized_week_key)}."
+        )
+
+    reminders[index - 1]["completed"] = completed
+    _save_reminder_state(state)
 
 
 def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
@@ -568,7 +712,13 @@ def get_diary_markdown(week_key: str) -> str:
     from work_diary_mcp.markdown import render_diary
 
     state = _load_state(week_key)
-    return render_diary(state)
+    reminder_state = _load_reminder_state()
+    reminders = reminder_state["reminders"].get(week_key, [])
+    render_state = {
+        **state,
+        "reminders": reminders,
+    }
+    return render_diary(render_state)
 
 
 def list_projects(week_key: str) -> dict[str, str]:
