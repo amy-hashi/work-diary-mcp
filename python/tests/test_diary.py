@@ -382,6 +382,23 @@ class TestWeekLock:
         assert lock_path.read_bytes() == b"0"
 
 
+class TestReminderLock:
+    def test_windows_reminder_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir):
+        if os.name != "nt":
+            pytest.skip("Windows-specific reminder lock behavior")
+
+        lock_path = diary_dir / "reminders.lock"
+
+        with diary_mod._reminder_lock():
+            pass
+        with diary_mod._reminder_lock():
+            pass
+        with diary_mod._reminder_lock():
+            pass
+
+        assert lock_path.read_bytes() == b"0"
+
+
 class TestHistoricalWeekWrites:
     def test_add_note_to_previous_week(self, diary_dir):
         week_key = "2026-03-02"
@@ -922,6 +939,41 @@ class TestReminders:
         markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
         assert "- [x] Confirm rollout checklist." in markdown
         assert "*(no reminders for this week)*" not in markdown
+
+    def test_add_reminder_refreshes_existing_week_markdown_without_changing_projects(
+        self, diary_dir
+    ):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="existing note")
+        original_state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.")
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+
+        assert state == original_state
+        assert "- [ ] Follow up with the perf team." in markdown
+        assert "| Alpha | 🟢 On Track | existing note |" in markdown
+
+    def test_set_reminder_completed_refreshes_existing_week_markdown_without_changing_notes(
+        self, diary_dir
+    ):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "existing note")
+        diary_mod.add_reminder(week_key, "Confirm rollout checklist.")
+        original_state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+
+        diary_mod.set_reminder_completed(week_key, 1, True)
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+
+        assert state == original_state
+        assert "- [x] Confirm rollout checklist." in markdown
+        assert "- **[1]** existing note" in markdown
 
     def test_get_diary_markdown_shows_empty_reminder_placeholder(self, diary_dir):
         week_key = "2026-03-02"
