@@ -282,7 +282,7 @@ class TestConfig:
         with patch.object(config_mod.os, "name", "nt"):
             result = config_mod._default_settings_file()
 
-        result_str = str(result).replace("\\", "/")
+        result_str = result.replace("\\", "/")
         appdata_str = str(appdata).replace("\\", "/")
         assert result_str.startswith(appdata_str)
         assert result_str.endswith("work-diary/settings.toml")
@@ -299,12 +299,10 @@ class TestConfig:
         with patch.object(config_mod.os, "name", "nt"):
             result = config_mod._default_settings_file()
 
-        result_str = str(result)
+        result_str = result.replace("\\", "/")
         assert "Users" in result_str
         assert "tester" in result_str
-        assert result_str.endswith("work-diary/settings.toml") or result_str.endswith(
-            "work-diary\\settings.toml"
-        )
+        assert result_str.endswith("work-diary/settings.toml")
 
     def test_settings_file_path_exists_as_file_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
