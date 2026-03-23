@@ -16,7 +16,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
   - `add_note`
   - `edit_note`
   - `delete_note`
-- Natural-language date targeting for write operations, including:
+- Natural-language date targeting for write operations and reminders, including:
   - `last week`
   - `next week`
   - `N weeks ago`
@@ -51,6 +51,8 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
   - Jira configuration
   - Windows behavior
   - tool-layer week resolution
+  - persisted Markdown regeneration for reminder updates
+  - reminder locking and refresh scoping
 - GitHub Actions test coverage on both:
   - `ubuntu-latest`
   - `windows-latest`
@@ -61,7 +63,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Jira linkification no longer depends on hardcoded organization-specific prefixes or URLs.
 - Help text for date-targeting tool parameters now consistently documents all supported relative date formats.
 - Persisted weekly Markdown now includes reminders when rendering `YYYY-MM-DD.md`.
-- Reminder changes now regenerate persisted weekly Markdown for existing week pages.
+- Reminder changes now regenerate persisted weekly Markdown for the affected existing week page only.
 
 ### Fixed
 - Preserved current-week carry-forward behavior when a caller explicitly supplies an ISO date that resolves to the current week.
@@ -72,6 +74,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Fixed reminder lookup so rendering a non-Monday date within a week still finds that week’s reminders.
 - Cached the Jira ticket regex instead of recompiling it repeatedly during linkification.
 - Regenerated persisted weekly Markdown when reminders are added or their completion state changes.
+- Added reminder locking and protected reminder-driven week Markdown refreshes with week locks to avoid concurrent stale rewrites.
 - Corrected idempotency hints for non-idempotent write tools.
 - Improved Windows config path handling and test portability.
 - Aligned typed diary structures with runtime behavior, including:
@@ -85,7 +88,10 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
   - future reminder behavior
   - configurable Jira auto-linking
   - Windows settings file location
+  - expanded relative date examples
+  - reminder Markdown refresh behavior
   - updated tool descriptions and usage examples
+- Added a top-level `CHANGELOG.md` and linked it from both README files.
 
 ## [1.0.0]
 - Initial Python-based MCP server for managing weekly work diaries.
