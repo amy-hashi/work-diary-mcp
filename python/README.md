@@ -118,7 +118,10 @@ On Windows, use Windows-style paths for both the `uv` executable and `WORK_DIARY
 
 ### Option 2 — Settings file
 
-Create `~/.config/work-diary/settings.toml` with a `data_dir` key:
+Create a settings file with a `data_dir` key:
+
+- **macOS / Linux**: `~/.config/work-diary/settings.toml`
+- **Windows**: `%APPDATA%\work-diary\settings.toml`
 
 ```toml
 data_dir = "~/Documents/work-diary"
@@ -129,7 +132,7 @@ The path is expanded automatically and the directory is created on first use.
 ### Resolution order
 
 1. `WORK_DIARY_DATA_DIR` environment variable
-2. `data_dir` in `~/.config/work-diary/settings.toml`
+2. `data_dir` in the platform-native settings file (`~/.config/work-diary/settings.toml` on macOS/Linux, `%APPDATA%\work-diary\settings.toml` on Windows)
 3. Built-in default: `<repo root>/data`
 
 ---
