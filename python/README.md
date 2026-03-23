@@ -23,7 +23,7 @@ See the [project changelog](../CHANGELOG.md) for release history and in-progress
 - **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
-- **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
+- **Relative date support** — target diary weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week using natural language such as `"add a note to last week's diary"`
 - **Weekly reminders** — store reminders for the current week or future weeks without creating future diary pages, render them with checkboxes, and mark them complete as work is finished
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
@@ -205,7 +205,7 @@ Edit note 2 in last week's diary: corrected the deployment summary
 Delete note 1 from 2 weeks ago
 Update Stacks on TFE to Blocked in last week's diary
 Add a reminder for next week: follow up with the perf testing team
-Add a reminder for this week with due date Friday: confirm rollout checklist
+Add a reminder for 2 weeks from now with due date Friday: confirm rollout checklist
 List reminders for next week
 Complete reminder 1 for this week
 Reopen reminder 2 for last week
@@ -348,7 +348,7 @@ On the first interaction of each new week, a fresh diary page is created automat
 
 If you write to a past week that does not exist yet, the server creates an empty diary page for that week instead of carrying state forward retroactively.
 
-Reminders are stored separately from weekly diary pages, so you can add them for the current week or for future weeks without creating future diary files. When a week is rendered, reminders for that week appear in a `Reminders for this week` section before `Project Status`. If a reminder includes a due date, it is rendered first in the reminder text as `Due Date: <date>`.
+Reminders are stored separately from weekly diary pages, so you can add them for the current week or for future weeks without creating future diary files. When a week is rendered, reminders for that week appear in a `Reminders for this week` section before `Project Status`. If a reminder includes a due date, it is rendered first in the reminder text as `Due Date: <date>`. When reminders change for an existing week, the server refreshes that week's rendered Markdown file without creating diary pages for other weeks.
 
 Carry-forward behavior is currently:
 

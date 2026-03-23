@@ -15,7 +15,7 @@ For a running summary of changes, see [CHANGELOG.md](CHANGELOG.md).
 - **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
-- **Relative date support** — retrieve past diaries with `"last week"` or `"2 weeks ago"`
+- **Relative date support** — target weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
 - **Reminders** — store reminders for the current or future weeks without creating future diary pages, render them in a dedicated section, and mark them complete with checkboxes
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
@@ -223,6 +223,7 @@ Delete note 1 from 2 weeks ago
 Update Stacks on TFE to Blocked in last week's diary with a note: waiting on dependency
 Add a reminder for next week: follow up with the perf team
 Add a reminder for next week with due date Friday: confirm rollout checklist
+Add a reminder in 4 weeks: prepare rollout notes
 List reminders for next week
 Complete reminder 1 for next week
 Reopen reminder 1 for next week
@@ -350,7 +351,7 @@ Reminders are stored separately in:
 
 - `reminders.json` — source of truth for reminders across current and future weeks
 
-Write operations default to the current week, but can also target a specific past week using a relative date or ISO date. If a past week does not yet exist, the server creates an empty diary page for that week instead of carrying forward state. Future reminders do not create future diary pages.
+Write operations default to the current week, but can also target a specific week using a relative date or ISO date, including `"last week"`, `"next week"`, `"N weeks ago"`, `"N weeks from now"`, `"in N weeks"`, or values such as `"2026-03-02"`. If a past week does not yet exist, the server creates an empty diary page for that week instead of carrying forward state. Future reminders do not create future diary pages.
 
 ---
 
@@ -365,6 +366,7 @@ Carry-forward behavior is currently:
 - **General notes are not carried forward**
 - **Completed or cancelled projects are not carried forward**
 - **Reminders for that week are rendered in the new diary page without creating future diary pages ahead of time**
+- **When reminders change for an existing week, that week's persisted Markdown is regenerated**
 
 Projects with a terminal status such as **Done**, **Complete**, **Completed**, **Cancelled**, or **Canceled** stay in the week they were finished and will not clutter the new week's diary.
 
