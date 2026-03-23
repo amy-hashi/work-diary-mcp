@@ -343,10 +343,14 @@ def get_or_create_page_for_week(week_key: str) -> dict:
     """
     Get or create a diary page for a specific week.
 
+    The supplied week key may be any ISO date within the target week; it is
+    normalized to that week's Monday before the page is created or loaded.
+
     Historical weeks are created empty rather than carrying forward state from
     adjacent weeks.
     """
-    return _ensure_week_page(week_key, carry_forward=False)
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    return _ensure_week_page(normalized_week_key, carry_forward=False)
 
 
 def update_project_status(

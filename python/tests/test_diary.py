@@ -454,6 +454,15 @@ class TestHistoricalWeekWrites:
             "notes": [],
         }
 
+    def test_get_or_create_page_for_week_normalizes_to_monday(self, diary_dir):
+        page = diary_mod.get_or_create_page_for_week("2026-03-04")
+
+        assert page["week_key"] == "2026-03-02"
+        assert page["week_label"] == "Mar 2, 2026"
+        assert page["is_new"] is True
+        assert (diary_dir / "2026-03-02.json").exists()
+        assert not (diary_dir / "2026-03-04.json").exists()
+
     def test_carry_forward_ignores_future_weeks(self, diary_dir):
         past_week = "2026-03-02"
         future_week = "2026-04-06"
