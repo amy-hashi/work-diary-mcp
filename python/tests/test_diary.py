@@ -282,24 +282,29 @@ class TestConfig:
         with patch.object(config_mod.os, "name", "nt"):
             result = config_mod._default_settings_file()
 
-        assert result.parts[-2:] == ("work-diary", "settings.toml")
+        assert result.parts == ("\\",) + tuple(appdata.parts[1:]) + ("work-diary", "settings.toml")
 
     def test_windows_settings_file_falls_back_when_appdata_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """On Windows, the settings path falls back to HOME/AppData/Roaming when APPDATA is unset."""
+        """On Windows, the settings path falls back to USERPROFILE/AppData/Roaming when APPDATA is unset."""
         import work_diary_mcp.config as config_mod
 
-        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", "C:/Users/tester")
         monkeypatch.delenv("APPDATA", raising=False)
 
-        with (
-            patch.object(config_mod.os, "name", "nt"),
-            patch.object(config_mod.Path, "home", return_value=tmp_path),
-        ):
+        with patch.object(config_mod.os, "name", "nt"):
             result = config_mod._default_settings_file()
 
-        assert result.parts[-4:] == ("AppData", "Roaming", "work-diary", "settings.toml")
+        assert result.parts == (
+            "C:\\",
+            "Users",
+            "tester",
+            "AppData",
+            "Roaming",
+            "work-diary",
+            "settings.toml",
+        )
 
     def test_settings_file_path_exists_as_file_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
