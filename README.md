@@ -149,6 +149,8 @@ jira_base_url = "https://jira.example.com/browse"
 jira_prefixes = ["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]
 ```
 
+`jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
+
 The path is expanded automatically and the directory is created on first use.
 
 You can also configure Jira auto-linking in the same settings file:
@@ -289,6 +291,8 @@ To customize auto-linking for your Jira instance, use configuration rather than 
 - **Settings file**
   - `jira_base_url`
   - `jira_prefixes`
+
+`WORK_DIARY_JIRA_BASE_URL` / `jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
 
 ---
 
