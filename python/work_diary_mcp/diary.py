@@ -380,12 +380,12 @@ def _load_reminder_state() -> ReminderState:
     return _empty_reminder_state()
 
 
-def _save_reminder_state(state: ReminderState) -> None:
+def _save_reminder_state(state: ReminderState, refresh_week_keys: set[str] | None = None) -> None:
     validated = _validate_reminder_state(state)
     json_content = json.dumps(validated, indent=2, ensure_ascii=False)
     _atomic_write_text(_reminders_path(), json_content)
 
-    for week_key in validated["reminders"]:
+    for week_key in refresh_week_keys or set():
         diary_path = _diary_path(week_key)
         if diary_path.exists():
             with _week_lock(week_key):
@@ -468,7 +468,7 @@ def add_reminder(week_key: str, content: str, due_date: str | None = None) -> No
             entry["dueDate"] = due_date
 
         state["reminders"].setdefault(normalized_week_key, []).append(entry)
-        _save_reminder_state(state)
+        _save_reminder_state(state, refresh_week_keys={normalized_week_key})
 
 
 def set_reminder_completed(week_key: str, index: int, completed: bool) -> None:
@@ -488,7 +488,7 @@ def set_reminder_completed(week_key: str, index: int, completed: bool) -> None:
             )
 
         reminders[index - 1]["completed"] = completed
-        _save_reminder_state(state)
+        _save_reminder_state(state, refresh_week_keys={normalized_week_key})
 
 
 def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:

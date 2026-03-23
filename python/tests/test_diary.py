@@ -233,11 +233,13 @@ class TestConfig:
         """A path starting with ~ is expanded correctly."""
         import work_diary_mcp.config as config_mod
 
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setenv("WORK_DIARY_DATA_DIR", "~/diary")
 
         self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
-        assert result == Path("~/diary").expanduser().resolve()
+        assert result == (tmp_path / "diary").resolve()
         assert result.is_dir()
 
     def test_get_data_dir_creates_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -269,6 +271,8 @@ class TestConfig:
         """A ~ in settings.toml data_dir is expanded correctly."""
         import work_diary_mcp.config as config_mod
 
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.delenv("WORK_DIARY_DATA_DIR", raising=False)
 
         settings_file = tmp_path / "settings.toml"
@@ -277,7 +281,7 @@ class TestConfig:
 
         self._clear_cache(config_mod)
         result = config_mod.get_data_dir()
-        assert result == Path("~/from-settings").expanduser().resolve()
+        assert result == (tmp_path / "from-settings").resolve()
         assert result.is_dir()
 
     def test_windows_settings_file_uses_appdata(
@@ -974,6 +978,25 @@ class TestReminders:
         assert state == original_state
         assert "- [x] Confirm rollout checklist." in markdown
         assert "- **[1]** existing note" in markdown
+
+    def test_add_reminder_only_refreshes_markdown_for_the_updated_week(self, diary_dir):
+        first_week = "2026-03-02"
+        second_week = "2026-03-09"
+
+        diary_mod.get_or_create_page_for_week(first_week)
+        diary_mod.get_or_create_page_for_week(second_week)
+
+        original_first_markdown = (diary_dir / f"{first_week}.md").read_text(encoding="utf-8")
+        original_second_markdown = (diary_dir / f"{second_week}.md").read_text(encoding="utf-8")
+
+        diary_mod.add_reminder(second_week, "Follow up with the perf team.")
+
+        updated_first_markdown = (diary_dir / f"{first_week}.md").read_text(encoding="utf-8")
+        updated_second_markdown = (diary_dir / f"{second_week}.md").read_text(encoding="utf-8")
+
+        assert updated_first_markdown == original_first_markdown
+        assert updated_second_markdown != original_second_markdown
+        assert "- [ ] Follow up with the perf team." in updated_second_markdown
 
     def test_get_diary_markdown_shows_empty_reminder_placeholder(self, diary_dir):
         week_key = "2026-03-02"
