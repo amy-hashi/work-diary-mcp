@@ -145,7 +145,7 @@ def get_jira_base_url() -> str:
     """Return the configured Jira browse base URL."""
     raw_env = os.environ.get(JIRA_BASE_URL_ENV_VAR)
     if raw_env:
-        return raw_env.rstrip("/")
+        return _normalize_jira_base_url(raw_env, source=f"${JIRA_BASE_URL_ENV_VAR}")
 
     if SETTINGS_FILE.exists():
         data = _load_settings_data(SETTINGS_FILE)
@@ -156,7 +156,7 @@ def get_jira_base_url() -> str:
                     f"Invalid settings file {SETTINGS_FILE}: "
                     f"'jira_base_url' must be a string, got {type(raw).__name__!r}."
                 )
-            return raw.rstrip("/")
+            return _normalize_jira_base_url(raw, source=str(SETTINGS_FILE))
 
     return _DEFAULT_JIRA_BASE_URL
 
@@ -182,6 +182,19 @@ def get_jira_prefixes() -> tuple[str, ...]:
             return prefixes or _DEFAULT_JIRA_PREFIXES
 
     return _DEFAULT_JIRA_PREFIXES
+
+
+def _normalize_jira_base_url(value: str, source: str) -> str:
+    """Validate and normalize a configured Jira base URL."""
+    normalized = value.strip().rstrip("/")
+    if not normalized:
+        raise ValueError(f"Invalid Jira base URL configured via {source}: value must not be empty.")
+    if "://" not in normalized:
+        raise ValueError(
+            f"Invalid Jira base URL configured via {source}: "
+            "value must include a URL scheme such as 'https://'."
+        )
+    return normalized
 
 
 def _validate(path: Path, source: str) -> None:
