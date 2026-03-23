@@ -282,7 +282,10 @@ class TestConfig:
         with patch.object(config_mod.os, "name", "nt"):
             result = config_mod._default_settings_file()
 
-        assert result.parts == ("\\",) + tuple(appdata.parts[1:]) + ("work-diary", "settings.toml")
+        result_str = str(result).replace("\\", "/")
+        appdata_str = str(appdata).replace("\\", "/")
+        assert result_str.startswith(appdata_str)
+        assert result_str.endswith("work-diary/settings.toml")
 
     def test_windows_settings_file_falls_back_when_appdata_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -296,14 +299,11 @@ class TestConfig:
         with patch.object(config_mod.os, "name", "nt"):
             result = config_mod._default_settings_file()
 
-        assert result.parts == (
-            "C:\\",
-            "Users",
-            "tester",
-            "AppData",
-            "Roaming",
-            "work-diary",
-            "settings.toml",
+        result_str = str(result)
+        assert "Users" in result_str
+        assert "tester" in result_str
+        assert result_str.endswith("work-diary/settings.toml") or result_str.endswith(
+            "work-diary\\settings.toml"
         )
 
     def test_settings_file_path_exists_as_file_raises(

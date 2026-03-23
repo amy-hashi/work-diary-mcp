@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import ntpath
 import os
 import tomllib
 from functools import lru_cache
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # Constants
@@ -12,24 +13,28 @@ from pathlib import Path, PureWindowsPath
 ENV_VAR = "WORK_DIARY_DATA_DIR"
 
 
-def _default_settings_file() -> Path | PureWindowsPath:
+def _default_settings_file() -> Path:
     """Return the platform-native default settings file path."""
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
-            return PureWindowsPath(appdata) / "work-diary" / "settings.toml"
+            return Path(ntpath.join(appdata, "work-diary", "settings.toml"))
 
         userprofile = os.environ.get("USERPROFILE")
         if userprofile:
-            return (
-                PureWindowsPath(userprofile)
-                / "AppData"
-                / "Roaming"
-                / "work-diary"
-                / "settings.toml"
+            return Path(
+                ntpath.join(
+                    userprofile,
+                    "AppData",
+                    "Roaming",
+                    "work-diary",
+                    "settings.toml",
+                )
             )
 
-        return PureWindowsPath("C:/Users/Default/AppData/Roaming/work-diary/settings.toml")
+        return Path(
+            ntpath.join("C:\\Users\\Default", "AppData", "Roaming", "work-diary", "settings.toml")
+        )
     return Path.home() / ".config" / "work-diary" / "settings.toml"
 
 
