@@ -5,6 +5,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TypedDict
 
 from work_diary_mcp.config import get_data_dir
 from work_diary_mcp.jira import linkify_jira_refs
@@ -14,7 +15,23 @@ from work_diary_mcp.statuses import is_completed
 # Types
 # --------------------------------------------------------------------------- #
 
-DiaryState = dict  # {weekKey, projects, projectNotes, notes}
+
+class NoteEntry(TypedDict):
+    content: str
+
+
+class DiaryState(TypedDict):
+    weekKey: str
+    projects: dict[str, str]
+    projectNotes: dict[str, str]
+    notes: list[NoteEntry]
+
+
+class ProjectUpdate(TypedDict, total=False):
+    project: str
+    status: str
+    note: str | None
+    append_note: bool
 
 
 # --------------------------------------------------------------------------- #
@@ -408,7 +425,7 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
 
 def bulk_update_projects(
     week_key: str,
-    updates: list[dict],
+    updates: list[ProjectUpdate],
 ) -> list[str]:
     """Update multiple projects in a single read-modify-write cycle.
 
@@ -490,7 +507,7 @@ def add_note(week_key: str, content: str) -> None:
     """
     with _week_lock(week_key):
         state = _load_state(week_key)
-        entry: dict = {"content": linkify_jira_refs(content)}
+        entry: NoteEntry = {"content": linkify_jira_refs(content)}
         state["notes"].append(entry)
         _save_state(state)
 

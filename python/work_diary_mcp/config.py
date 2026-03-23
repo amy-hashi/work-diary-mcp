@@ -11,8 +11,21 @@ from pathlib import Path
 
 ENV_VAR = "WORK_DIARY_DATA_DIR"
 
-# Default settings file location: ~/.config/work-diary/settings.toml
-SETTINGS_FILE = Path.home() / ".config" / "work-diary" / "settings.toml"
+
+def _default_settings_file() -> Path:
+    """Return the platform-native default settings file path."""
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(os.path.join(appdata, "work-diary", "settings.toml")).expanduser()
+        return Path.home() / "AppData" / "Roaming" / "work-diary" / "settings.toml"
+    return Path.home() / ".config" / "work-diary" / "settings.toml"
+
+
+# Default settings file location:
+# - Windows: %APPDATA%/work-diary/settings.toml
+# - Other platforms: ~/.config/work-diary/settings.toml
+SETTINGS_FILE = _default_settings_file()
 
 # Built-in fallback: <repo root>/data  (python/work_diary_mcp/ -> repo root)
 _BUILTIN_DEFAULT = Path(__file__).parent.parent.parent / "data"
@@ -30,7 +43,7 @@ def get_data_dir() -> Path:
     Resolution order (first match wins):
 
     1. ``WORK_DIARY_DATA_DIR`` environment variable
-    2. ``data_dir`` key in ``~/.config/work-diary/settings.toml``
+    2. ``data_dir`` key in the platform-native settings file
     3. Built-in default: ``<repo root>/data``
 
     The resolved path is created if it does not already exist.
