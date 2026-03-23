@@ -329,6 +329,39 @@ def _week_lock(week_key: str):
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+@contextmanager
+def _reminder_lock():
+    """Take an exclusive filesystem lock for reminder state."""
+    lock_path = get_data_dir() / "reminders.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if os.name == "nt":
+        import msvcrt
+
+        with lock_path.open("a+b") as lock_file:
+            lock_file.seek(0)
+            if lock_file.read(1) == b"":
+                lock_file.seek(0)
+                lock_file.write(b"0")
+                lock_file.flush()
+            lock_file.seek(0)
+            try:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _load_state(week_key: str) -> DiaryState:
     path = _diary_path(week_key)
     if path.exists():
@@ -355,7 +388,8 @@ def _save_reminder_state(state: ReminderState) -> None:
     for week_key in validated["reminders"]:
         diary_path = _diary_path(week_key)
         if diary_path.exists():
-            _save_state(_load_state(week_key))
+            with _week_lock(week_key):
+                _save_state(_load_state(week_key))
 
 
 def _save_state(state: DiaryState) -> None:
@@ -422,35 +456,39 @@ def list_reminders(week_key: str) -> list[ReminderEntry]:
 def add_reminder(week_key: str, content: str, due_date: str | None = None) -> None:
     """Add a reminder for the specified week without creating a diary page."""
     normalized_week_key = get_week_key(date.fromisoformat(week_key))
-    state = _load_reminder_state()
 
-    entry: ReminderEntry = {
-        "content": linkify_jira_refs(content),
-        "completed": False,
-    }
-    if due_date is not None:
-        entry["dueDate"] = due_date
+    with _reminder_lock():
+        state = _load_reminder_state()
 
-    state["reminders"].setdefault(normalized_week_key, []).append(entry)
-    _save_reminder_state(state)
+        entry: ReminderEntry = {
+            "content": linkify_jira_refs(content),
+            "completed": False,
+        }
+        if due_date is not None:
+            entry["dueDate"] = due_date
+
+        state["reminders"].setdefault(normalized_week_key, []).append(entry)
+        _save_reminder_state(state)
 
 
 def set_reminder_completed(week_key: str, index: int, completed: bool) -> None:
     """Set the completion state of a reminder by its 1-based index."""
     normalized_week_key = get_week_key(date.fromisoformat(week_key))
-    state = _load_reminder_state()
-    reminders = state["reminders"].get(normalized_week_key, [])
 
-    if not (1 <= index <= len(reminders)):
-        raise ValueError(
-            f"Reminder index {index} is out of range — "
-            f"there {'is' if len(reminders) == 1 else 'are'} "
-            f"{len(reminders)} reminder{'s' if len(reminders) != 1 else ''} "
-            f"in the diary for the week of {get_week_label(normalized_week_key)}."
-        )
+    with _reminder_lock():
+        state = _load_reminder_state()
+        reminders = state["reminders"].get(normalized_week_key, [])
 
-    reminders[index - 1]["completed"] = completed
-    _save_reminder_state(state)
+        if not (1 <= index <= len(reminders)):
+            raise ValueError(
+                f"Reminder index {index} is out of range — "
+                f"there {'is' if len(reminders) == 1 else 'are'} "
+                f"{len(reminders)} reminder{'s' if len(reminders) != 1 else ''} "
+                f"in the diary for the week of {get_week_label(normalized_week_key)}."
+            )
+
+        reminders[index - 1]["completed"] = completed
+        _save_reminder_state(state)
 
 
 def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
