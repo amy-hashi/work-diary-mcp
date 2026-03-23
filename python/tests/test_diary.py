@@ -823,6 +823,39 @@ class TestJiraConfig:
         with pytest.raises(TypeError, match="jira_prefixes"):
             config_mod.get_jira_prefixes()
 
+    def test_get_jira_base_url_empty_string_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text('jira_base_url = ""\n', encoding="utf-8")
+
+        monkeypatch.delenv("WORK_DIARY_JIRA_BASE_URL", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_base_url.cache_clear()
+        with pytest.raises(ValueError, match="must not be empty"):
+            config_mod.get_jira_base_url()
+
+    def test_get_jira_base_url_without_scheme_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            'jira_base_url = "jira.example.com/browse"\n',
+            encoding="utf-8",
+        )
+
+        monkeypatch.delenv("WORK_DIARY_JIRA_BASE_URL", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings_file)
+
+        config_mod.get_jira_base_url.cache_clear()
+        with pytest.raises(ValueError, match="must include a URL scheme"):
+            config_mod.get_jira_base_url()
+
 
 class TestReminders:
     def test_add_future_reminder_does_not_create_diary_page(self, diary_dir):
