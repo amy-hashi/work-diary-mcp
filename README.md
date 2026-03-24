@@ -292,7 +292,7 @@ Examples:
 
 Ticket keys are uppercased in generated links. References that do not match a supported prefix are left as-is.
 
-`WORK_DIARY_JIRA_BASE_URL` / `jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
+`WORK_DIARY_JIRA_BASE_URL` / `jira_base_url` must be a non-empty URL and must include a scheme such as `https://`.
 
 ---
 
