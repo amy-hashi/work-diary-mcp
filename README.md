@@ -8,49 +8,24 @@ For a running summary of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Features
+## Index
 
-- **Project status table** — track projects with a status and an optional inline note per project
-- **General notes** — append notes throughout the week
-- **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
-- **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
-- **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
-- **Relative date support** — target weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
-- **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
-- **Reminders** — store reminders for the current or future weeks without creating future diary pages, render them in a dedicated section, and mark them complete with checkboxes
-- **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
-
----
-
-## Project Structure
-
-```text
-work-diary-mcp/
-├── .gitignore
-├── README.md
-├── data/                          # Diary files (gitignored) — default location
-│   ├── YYYY-MM-DD.json            # Raw state for each week
-│   └── YYYY-MM-DD.md              # Rendered Markdown, ready to copy into Loop
-└── python/
-    ├── README.md                  # Python-specific setup details
-    ├── pyproject.toml
-    ├── uv.lock
-    ├── tests/
-    │   ├── __init__.py
-    │   └── test_diary.py
-    └── work_diary_mcp/
-        ├── __init__.py
-        ├── config.py              # Data directory resolution (env var / settings file)
-        ├── diary.py               # State management, week helpers, persistence
-        ├── jira.py                # Jira ticket auto-linking
-        ├── markdown.py            # Markdown renderer
-        ├── server.py              # FastMCP server and tool definitions
-        └── statuses.py            # Status definitions (emoji map, completion set)
-```
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Tools](#tools)
+- [Usage](#usage)
+- [Features](#features)
+- [Supported Status Values](#supported-status-values)
+- [Jira Auto-Linking](#jira-auto-linking)
+- [Data Format](#data-format)
+- [Data Location](#data-location)
+- [Carry-Forward Behaviour](#carry-forward-behaviour)
+- [Project Structure](#project-structure)
+- [Testing](#testing)
 
 ---
 
-## Setup
+## Quick Start
 
 ### Prerequisites
 
@@ -100,9 +75,11 @@ claude mcp add work-diary /path/to/uv \
 
 ## Configuration
 
-By default, diary files are written to `data/` inside the repository. You can point the server at any directory using either of the methods below.
+By default, diary files are written to `data/` inside the repository. You can point the server at any directory and configure Jira auto-linking using either environment variables or the settings file.
 
-### Option 1 — Environment variable
+### Environment variables
+
+#### Data directory
 
 Set `WORK_DIARY_DATA_DIR` to an absolute (or `~`-prefixed) path:
 
@@ -110,7 +87,7 @@ Set `WORK_DIARY_DATA_DIR` to an absolute (or `~`-prefixed) path:
 export WORK_DIARY_DATA_DIR=~/Documents/work-diary
 ```
 
-To make it permanent, add the export to your shell profile and pass it through to the server in your MCP client config:
+To make it permanent, add the export to your shell profile and pass it through to the server in your MCP client config.
 
 **Zed** — add an `env` entry:
 
@@ -120,7 +97,9 @@ To make it permanent, add the export to your shell profile and pass it through t
     "work-diary": {
       "command": "/path/to/uv",
       "args": ["--directory", "/Users/yourname/work-diary-mcp/python", "run", "work-diary-mcp"],
-      "env": { "WORK_DIARY_DATA_DIR": "/Users/yourname/Documents/work-diary" }
+      "env": {
+        "WORK_DIARY_DATA_DIR": "/Users/yourname/Documents/work-diary"
+      }
     }
   }
 }
@@ -136,9 +115,25 @@ claude mcp add work-diary /path/to/uv \
 
 On Windows, use Windows-style paths for both the `uv` executable and `WORK_DIARY_DATA_DIR`.
 
-### Option 2 — Settings file
+#### Jira auto-linking
 
-Create a settings file with a `data_dir` key:
+You can also configure Jira linkification via environment variables:
+
+- `WORK_DIARY_JIRA_BASE_URL`
+- `WORK_DIARY_JIRA_PREFIXES`
+
+Example:
+
+```bash
+export WORK_DIARY_JIRA_BASE_URL=https://jira.example.com/browse
+export WORK_DIARY_JIRA_PREFIXES=PROJ,INFRA,ENG
+```
+
+`WORK_DIARY_JIRA_BASE_URL` must be a non-empty URL and should include a scheme such as `https://`.
+
+### Settings file
+
+Create a settings file with any combination of the following keys:
 
 - **macOS / Linux:** `~/.config/work-diary/settings.toml`
 - **Windows:** `%APPDATA%\work-diary\settings.toml`
@@ -149,23 +144,24 @@ jira_base_url = "https://jira.example.com/browse"
 jira_prefixes = ["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]
 ```
 
-`jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
+Settings file keys:
 
-The path is expanded automatically and the directory is created on first use.
-
-You can also configure Jira auto-linking in the same settings file:
-
+- `data_dir` — where diary files and reminder storage should live
 - `jira_base_url` — the base browse URL for your Jira instance
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
 
+`jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
+
+The configured path is expanded automatically and the directory is created on first use.
+
 ### Resolution order
 
-**Data directory**
+#### Data directory
 1. `WORK_DIARY_DATA_DIR` environment variable
-2. `data_dir` in the platform-native settings file (`~/.config/work-diary/settings.toml` on macOS / Linux, `%APPDATA%\work-diary\settings.toml` on Windows)
+2. `data_dir` in the platform-native settings file
 3. Built-in default: `<repo root>/data`
 
-**Jira auto-linking**
+#### Jira auto-linking
 1. `WORK_DIARY_JIRA_BASE_URL` / `WORK_DIARY_JIRA_PREFIXES` environment variables
 2. `jira_base_url` / `jira_prefixes` in the platform-native settings file
 3. Built-in defaults:
@@ -233,6 +229,20 @@ Reopen reminder 1 for next week
 
 ---
 
+## Features
+
+- **Project status table** — track projects with a status and an optional inline note per project
+- **General notes** — append notes throughout the week
+- **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
+- **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
+- **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
+- **Relative date support** — target weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
+- **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
+- **Reminders** — store reminders for the current or future weeks without creating future diary pages, render them in a dedicated section, and mark them complete with checkboxes
+- **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
+
+---
+
 ## Supported Status Values
 
 Well-known statuses are automatically formatted with emoji. Any other string is stored as-is.
@@ -264,12 +274,11 @@ The default Jira configuration is:
 - **Base URL:** `https://jira.example.com/browse`
 - **Prefixes:** `PROJ`, `INFRA`, `ENG`, `OPS`, `SEC`, `DATA`
 
-You can override these with either:
-
+You can override these through either:
 - environment variables:
   - `WORK_DIARY_JIRA_BASE_URL`
   - `WORK_DIARY_JIRA_PREFIXES` (comma-separated, for example `PROJ,INFRA,ENG`)
-- settings file keys:
+- the settings file:
   - `jira_base_url`
   - `jira_prefixes`
 
@@ -282,15 +291,6 @@ Examples:
 | `[PROJ-1234](https://jira.example.com/browse/PROJ-1234)` | unchanged |
 
 Ticket keys are uppercased in generated links. References that do not match a supported prefix are left as-is.
-
-To customize auto-linking for your Jira instance, use configuration rather than editing source code:
-
-- **Environment variables**
-  - `WORK_DIARY_JIRA_BASE_URL`
-  - `WORK_DIARY_JIRA_PREFIXES`
-- **Settings file**
-  - `jira_base_url`
-  - `jira_prefixes`
 
 `WORK_DIARY_JIRA_BASE_URL` / `jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
 
@@ -373,6 +373,35 @@ Carry-forward behavior is currently:
 - **When reminders change for an existing week, that week's persisted Markdown is regenerated**
 
 Projects with a terminal status such as **Done**, **Complete**, **Completed**, **Cancelled**, or **Canceled** stay in the week they were finished and will not clutter the new week's diary.
+
+---
+
+## Project Structure
+
+```text
+work-diary-mcp/
+├── .gitignore
+├── README.md
+├── CHANGELOG.md
+├── data/                          # Diary files (gitignored) — default location
+│   ├── YYYY-MM-DD.json            # Raw state for each week
+│   └── YYYY-MM-DD.md              # Rendered Markdown, ready to copy into Loop
+└── python/
+    ├── README.md                  # Python-specific setup details
+    ├── pyproject.toml
+    ├── uv.lock
+    ├── tests/
+    │   ├── __init__.py
+    │   └── test_diary.py
+    └── work_diary_mcp/
+        ├── __init__.py
+        ├── config.py              # Data directory resolution and Jira configuration
+        ├── diary.py               # State management, reminders, week helpers, persistence
+        ├── jira.py                # Jira ticket auto-linking
+        ├── markdown.py            # Markdown renderer
+        ├── server.py              # FastMCP server and tool definitions
+        └── statuses.py            # Status definitions (emoji map, completion set)
+```
 
 ---
 
