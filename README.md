@@ -129,7 +129,7 @@ export WORK_DIARY_JIRA_BASE_URL=https://jira.example.com/browse
 export WORK_DIARY_JIRA_PREFIXES=PROJ,INFRA,ENG
 ```
 
-`WORK_DIARY_JIRA_BASE_URL` must be a non-empty URL and should include a scheme such as `https://`.
+`WORK_DIARY_JIRA_BASE_URL` must be a non-empty URL and must include a scheme such as `https://`.
 
 ### Settings file
 
