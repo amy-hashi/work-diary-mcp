@@ -150,7 +150,7 @@ Settings file keys:
 - `jira_base_url` — the base browse URL for your Jira instance
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
 
-`jira_base_url` must be a non-empty URL and should include a scheme such as `https://`.
+`jira_base_url` must be a non-empty URL and must include a scheme such as `https://`.
 
 The configured path is expanded automatically and the directory is created on first use.
 
