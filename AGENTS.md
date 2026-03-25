@@ -272,8 +272,8 @@ treat it as high-risk and verify both tests and docs carefully.
 - Keep actual secrets in `.gitignore`d files like `~/.private-zshrc`
 - Sanitize any private information before copying to `.example` files
 
-When modifying configurations like `git/gitconfig.symlink`:
-1. Make changes to the actual symlinked file
-2. If it has a corresponding `.example` file (e.g., `gitconfig.symlink.example`), copy the changes there
+When modifying configuration files that may contain secrets (for example, personal git configuration):
+1. Make changes to the actual configuration or symlinked file
+2. If it has a corresponding `.example` file (e.g., `config.example`), copy the non-secret parts of the changes there
 3. **SANITIZE any private information** in the `.example` file (replace with placeholders like `AUTHORNAME`, `AUTHOREMAIL`)
 4. Verify no secrets are present before committing
