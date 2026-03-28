@@ -8,12 +8,14 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ### Added
 - Project row reference support for existing projects, allowing updates by table position with references such as `project 2`.
+- Bulk project update support for existing project row references, allowing bulk updates to target rows such as `project 2`.
 
 ### Changed
-- Existing projects can now be referenced by row number in project update operations, while ambiguous references require clarification instead of guessing.
+- Existing projects can now be referenced by row number in project update operations, including bulk updates, while ambiguous references require clarification instead of guessing.
 
 ### Fixed
 - Added ambiguity detection for project row references so inputs like `project 2` do not silently target the wrong row when they could also refer to a literal project name.
+- Ensured bulk project updates treat out-of-range row references as errors instead of creating unintended new projects.
 
 ### Documentation
 - Updated both README files to document:

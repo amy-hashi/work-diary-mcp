@@ -749,10 +749,17 @@ def bulk_update_projects(
             note = item.get("note")
             append_note = bool(item.get("append_note", False))
 
-            existing_key = next(
-                (k for k in state["projects"] if k.lower() == project.lower()), None
-            )
-            key = existing_key or linkify_jira_refs(project)
+            row_index = _project_row_reference_index(project)
+            if row_index is not None:
+                existing_key = _resolve_existing_project_key(state, week_key, project)
+                key = existing_key
+            else:
+                existing_key = next(
+                    (k for k in state["projects"] if k.lower() == project.lower()),
+                    None,
+                )
+                key = existing_key or linkify_jira_refs(project)
+
             state["projects"][key] = status
 
             if note is not None:
