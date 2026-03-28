@@ -175,9 +175,9 @@ The configured path is expanded automatically and the directory is created on fi
 
 | Tool | Description |
 |------|-------------|
-| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. You can also target a specific week with `date`. |
+| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
 | `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. You can also target a specific week with `date`. |
-| `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. |
+| `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
 | `add_note` | Append a note to the general notes section. You can also target a specific week with `date`. |
 | `edit_note` | Replace the content of an existing note by its index number. You can also target a specific week with `date`. |
 | `delete_note` | Delete a note by its index number. You can also target a specific week with `date`. |
@@ -188,8 +188,8 @@ The configured path is expanded automatically and the directory is created on fi
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
-| `remove_project` | Remove a project and its note from the target week. You can also target a specific week with `date`. |
-| `clear_project_note` | Clear the inline note for a project, leaving its status intact. You can also target a specific week with `date`. |
+| `remove_project` | Remove a project and its note from the target week. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
+| `clear_project_note` | Clear the inline note for a project, leaving its status intact. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
 
 ---
 
@@ -220,6 +220,9 @@ Add a note to last week's diary: followed up on rollout issues
 Edit note 2 in last week's diary: corrected the deployment summary
 Delete note 1 from 2 weeks ago
 Update Stacks on TFE to Blocked in last week's diary
+Update project 2 to Done
+Clear the note on project 3
+Rename project 1 to Phoenix Rewrite
 Add a reminder for next week: follow up with the perf testing team
 Add a reminder for 2 weeks from now with due date Friday: confirm rollout checklist
 List reminders for next week
@@ -246,6 +249,7 @@ Reopen reminder 2 for last week
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — target diary weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week using natural language such as `"add a note to last week's diary"`
+- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, renaming, or clearing project notes
 - **Weekly reminders** — store reminders for the current week or future weeks without creating future diary pages, render them with checkboxes, and mark them complete as work is finished
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 

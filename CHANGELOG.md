@@ -4,6 +4,26 @@ All notable changes to `work-diary-mcp` will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows a simple versioned changelog structure.
 
+## [0.2.0 - 03-28-2026]
+
+### Added
+- Project row reference support for existing projects, allowing updates by table position with references such as `project 2`.
+
+### Changed
+- Existing projects can now be referenced by row number in project update operations, while ambiguous references require clarification instead of guessing.
+
+### Fixed
+- Added ambiguity detection for project row references so inputs like `project 2` do not silently target the wrong row when they could also refer to a literal project name.
+
+### Documentation
+- Updated both README files to document:
+  - project row reference examples
+- Reorganized both README files to:
+  - add an index near the top
+  - move installation, configuration, tools, and usage higher up
+  - move project/reference information lower down
+  - consolidate configuration guidance into a single section
+
 ## [0.1.0 - 03-23-2026]
 
 ### Added
