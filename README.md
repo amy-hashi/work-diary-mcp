@@ -174,8 +174,8 @@ The configured path is expanded automatically and the directory is created on fi
 
 | Tool | Description |
 |------|-------------|
-| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Out-of-range row references raise an error instead of creating a new project. |
-| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Out-of-range row references raise an error instead of creating a new project. |
+| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, and out-of-range positive references are treated as literal project names rather than raising. |
+| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, and out-of-range positive references are treated as literal project names rather than raising. |
 | `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. |
 | `add_note` | Append a note to the general notes section. Supports an optional `date` to target a specific week. |
 | `edit_note` | Replace the content of an existing note by its index number. Supports an optional `date` to target a specific week. |
@@ -241,7 +241,7 @@ Reopen reminder 1 for next week
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — target weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
-- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, bulk updating, renaming, removing, or clearing project notes. If a row reference is out of range, the server raises an error instead of creating a new project.
+- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, bulk updating, renaming, removing, or clearing project notes. If a reference like `"project 2"` could also mean a literal project named `Project 2`, the server raises an ambiguity error instead of guessing. Out-of-range positive references are treated as literal project names, while invalid non-positive row references such as `"project 0"` raise an error.
 - **Reminders** — store reminders for the current or future weeks without creating future diary pages, render them in a dedicated section, and mark them complete with checkboxes
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 
