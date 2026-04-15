@@ -564,7 +564,8 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
     - row references of the form ``project N``
 
     Raises:
-        ValueError: If the project reference is ambiguous or does not resolve.
+        ValueError: If the project reference is ambiguous, out of range, or
+        does not resolve to an existing project.
     """
     exact_match = next(
         (key for key in state["projects"] if key.lower() == project_ref.lower()),
@@ -573,13 +574,9 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
 
     row_index = _project_row_reference_index(project_ref)
     row_match: str | None = None
-    row_out_of_range = False
-    if row_index is not None:
-        project_keys = list(state["projects"].keys())
-        if 1 <= row_index <= len(project_keys):
-            row_match = project_keys[row_index - 1]
-        else:
-            row_out_of_range = True
+    project_keys = list(state["projects"].keys())
+    if row_index is not None and 1 <= row_index <= len(project_keys):
+        row_match = project_keys[row_index - 1]
 
     if exact_match is not None and row_match is not None and exact_match != row_match:
         raise ValueError(
@@ -593,7 +590,7 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
     if resolved is not None:
         return resolved
 
-    if row_out_of_range:
+    if row_index is not None:
         raise ValueError(
             f"Project index {row_index} is out of range — "
             f"there {'is' if len(project_keys) == 1 else 'are'} "
@@ -617,17 +614,17 @@ def _resolve_project_key_for_update(
     new project name.
 
     Raises:
-        ValueError: If the project reference is ambiguous or an invalid row
-        reference such as ``project 0``.
+        ValueError: If the project reference is ambiguous or if a row reference
+        such as ``project 0`` or ``project 9`` is invalid for the current table.
     """
     exact_match = next(
         (key for key in state["projects"] if key.lower() == project_ref.lower()),
         None,
     )
     row_index = _project_row_reference_index(project_ref)
+    project_keys = list(state["projects"].keys())
 
     if exact_match is not None:
-        project_keys = list(state["projects"].keys())
         row_match: str | None = None
         if row_index is not None and 1 <= row_index <= len(project_keys):
             row_match = project_keys[row_index - 1]
@@ -644,11 +641,10 @@ def _resolve_project_key_for_update(
         if row_index < 1:
             raise ValueError(
                 f"Project index {row_index} is out of range — "
-                f"there {'is' if len(state['projects']) == 1 else 'are'} {len(state['projects'])} "
-                f"project{'s' if len(state['projects']) != 1 else ''} "
+                f"there {'is' if len(project_keys) == 1 else 'are'} "
+                f"{len(project_keys)} project{'s' if len(project_keys) != 1 else ''} "
                 f"in the diary for the week of {get_week_label(week_key)}."
             )
-        project_keys = list(state["projects"].keys())
         if row_index <= len(project_keys):
             return project_keys[row_index - 1]
         return None
@@ -749,16 +745,8 @@ def bulk_update_projects(
             note = item.get("note")
             append_note = bool(item.get("append_note", False))
 
-            row_index = _project_row_reference_index(project)
-            if row_index is not None:
-                existing_key = _resolve_existing_project_key(state, week_key, project)
-                key = existing_key
-            else:
-                existing_key = next(
-                    (k for k in state["projects"] if k.lower() == project.lower()),
-                    None,
-                )
-                key = existing_key or linkify_jira_refs(project)
+            existing_key = _resolve_project_key_for_update(state, week_key, project)
+            key = existing_key or linkify_jira_refs(project)
 
             state["projects"][key] = status
 
