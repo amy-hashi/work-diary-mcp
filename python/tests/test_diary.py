@@ -1427,6 +1427,53 @@ class TestUpdateProjectStatus:
         assert "project phoenix" not in state["projects"]
         assert state["projects"]["Project Phoenix"] == "Blocked"
 
+    def test_row_reference_match(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.update_project_status(week_key, "project 2", "Done")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {"Alpha": "On Track", "Beta": "Done"}
+
+    def test_ambiguous_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Project 2", "On Track")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked")
+        with pytest.raises(ValueError, match="ambiguous"):
+            diary_mod.update_project_status(week_key, "project 2", "Done")
+
+    def test_out_of_range_row_reference_creates_or_updates_literal_project_for_updates(
+        self, diary_dir
+    ):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "project 1", "Done")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"]["project 1"] == "Done"
+
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.update_project_status(week_key, "project 3", "At Risk")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"]["Beta"] == "At Risk"
+        assert "project 3" not in state["projects"]
+
+    def test_zero_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.update_project_status(week_key, "project 0", "Done")
+
+    def test_literal_project_zero_still_raises_for_update(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.update_project_status(week_key, "project 0", "Done")
+
     def test_sets_note(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", note="going well")
@@ -1526,6 +1573,32 @@ class TestRenameProject:
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert "Phoenix Rewrite" in state["projects"]
 
+    def test_row_reference_match(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.rename_project(week_key, "project 2", "Gamma")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert list(state["projects"].keys()) == ["Alpha", "Gamma"]
+        assert state["projects"]["Gamma"] == "Blocked"
+
+    def test_ambiguous_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Project 2", "On Track")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked")
+        with pytest.raises(ValueError, match="ambiguous"):
+            diary_mod.rename_project(week_key, "project 2", "Renamed Project")
+
+    def test_out_of_range_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        with pytest.raises(ValueError, match="there are 0 projects"):
+            diary_mod.rename_project(week_key, "project 1", "Renamed Project")
+
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        with pytest.raises(ValueError, match="there are 2 projects"):
+            diary_mod.rename_project(week_key, "project 3", "Renamed Project")
+
 
 # ---------------------------------------------------------------------------
 # bulk_update_projects
@@ -1604,6 +1677,86 @@ class TestBulkUpdateProjects:
         assert "project phoenix" not in state["projects"]
         assert state["projects"]["Project Phoenix"] == "Blocked"
 
+    def test_row_reference_match(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.bulk_update_projects(week_key, [{"project": "project 2", "status": "Done"}])
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {"Alpha": "On Track", "Beta": "Done"}
+
+    def test_ambiguous_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Project 2", "On Track")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked")
+        with pytest.raises(ValueError, match="ambiguous"):
+            diary_mod.bulk_update_projects(week_key, [{"project": "project 2", "status": "Done"}])
+
+    def test_out_of_range_positive_row_reference_creates_literal_project_in_bulk(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+
+        diary_mod.bulk_update_projects(week_key, [{"project": "project 3", "status": "Done"}])
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {
+            "Alpha": "On Track",
+            "Beta": "Blocked",
+            "project 3": "Done",
+        }
+
+    def test_bulk_row_reference_uses_current_table_order(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.bulk_update_projects(week_key, [{"project": "project 1", "status": "Done"}])
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+
+        diary_mod.bulk_update_projects(week_key, [{"project": "project 3", "status": "Done"}])
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {
+            "project 1": "Done",
+            "Alpha": "On Track",
+            "Beta": "Done",
+        }
+
+    def test_zero_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.bulk_update_projects(week_key, [{"project": "project 0", "status": "Done"}])
+
+    def test_literal_project_zero_still_raises_in_bulk(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.bulk_update_projects(week_key, [{"project": "project 0", "status": "Done"}])
+
+    def test_mixed_existing_row_and_new_project(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.bulk_update_projects(
+            week_key,
+            [
+                {"project": "project 2", "status": "Done"},
+                {"project": "Alpha", "status": "At Risk"},
+                {"project": "Gamma", "status": "On Track"},
+            ],
+        )
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {
+            "Alpha": "At Risk",
+            "Beta": "Done",
+            "Gamma": "On Track",
+        }
+
 
 # ---------------------------------------------------------------------------
 # remove_project
@@ -1613,7 +1766,7 @@ class TestBulkUpdateProjects:
 class TestRemoveProject:
     def test_removes_project_and_note(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="a note")
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="going well")
         diary_mod.remove_project(week_key, "Alpha")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert "Alpha" not in state["projects"]
@@ -1629,7 +1782,44 @@ class TestRemoveProject:
         diary_mod.update_project_status(week_key, "Project Phoenix", "On Track")
         diary_mod.remove_project(week_key, "project phoenix")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert "Project Phoenix" not in state["projects"]
+        assert state["projects"] == {}
+
+    def test_row_reference_match(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.remove_project(week_key, "project 2")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {"Alpha": "On Track"}
+
+    def test_ambiguous_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Project 2", "On Track")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked")
+        with pytest.raises(ValueError, match="ambiguous"):
+            diary_mod.remove_project(week_key, "project 2")
+
+    def test_out_of_range_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        with pytest.raises(ValueError, match="there are 0 projects"):
+            diary_mod.remove_project(week_key, "project 1")
+
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        with pytest.raises(ValueError, match="there are 2 projects"):
+            diary_mod.remove_project(week_key, "project 3")
+
+    def test_literal_project_zero_still_raises_for_remove(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.remove_project(week_key, "project 0")
 
 
 # ---------------------------------------------------------------------------
@@ -1640,16 +1830,53 @@ class TestRemoveProject:
 class TestClearProjectNote:
     def test_clears_note_leaves_status(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="a note")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="waiting")
         diary_mod.clear_project_note(week_key, "Alpha")
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projects"]["Alpha"] == "On Track"
+        assert state["projects"]["Alpha"] == "Blocked"
         assert "Alpha" not in state["projectNotes"]
 
     def test_not_found_raises(self, diary_dir):
         week_key = "2026-03-02"
         with pytest.raises(ValueError, match="not found"):
             diary_mod.clear_project_note(week_key, "Ghost")
+
+    def test_row_reference_match(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="waiting")
+        diary_mod.update_project_status(week_key, "Beta", "On Track", note="ready")
+        diary_mod.clear_project_note(week_key, "project 2")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectNotes"] == {"Alpha": "waiting"}
+
+    def test_ambiguous_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Project 2", "Blocked", note="waiting")
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="ready")
+        with pytest.raises(ValueError, match="ambiguous"):
+            diary_mod.clear_project_note(week_key, "project 2")
+
+    def test_out_of_range_row_reference_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        with pytest.raises(ValueError, match="there are 0 projects"):
+            diary_mod.clear_project_note(week_key, "project 1")
+
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="waiting")
+        diary_mod.update_project_status(week_key, "Beta", "On Track", note="ready")
+        with pytest.raises(ValueError, match="there are 2 projects"):
+            diary_mod.clear_project_note(week_key, "project 3")
+
+    def test_literal_project_zero_still_raises_for_clear_note(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {"Project 0": "still here"},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.clear_project_note(week_key, "project 0")
 
 
 # ---------------------------------------------------------------------------

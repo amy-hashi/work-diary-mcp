@@ -4,6 +4,29 @@ All notable changes to `work-diary-mcp` will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows a simple versioned changelog structure.
 
+## [0.2.0 - 03-28-2026]
+
+### Added
+- Project row reference support for existing projects across update, bulk update, rename, remove, and clear-note operations, allowing references such as `project 2` to target a project by table position.
+
+### Changed
+- Existing projects can now be referenced by row number in project update, bulk update, rename, remove, and clear-note operations, while ambiguous references require clarification instead of guessing.
+- Row references such as `project 2` resolve to existing project rows when in range; non-positive row references fail, and out-of-range positive references continue to fall back to literal project names for update operations.
+
+### Fixed
+- Added ambiguity detection for project row references so inputs like `project 2` do not silently target the wrong row when they could also refer to a literal project name.
+- Improved handling and documentation of row-reference edge cases so non-positive indices fail with clear errors, including when a literal project named `Project 0` exists, while out-of-range positive references can still be treated as literal project names.
+- Improved row-reference error messaging so singular and plural project counts use correct grammar.
+
+### Documentation
+- Updated both README files to document:
+  - project row reference examples
+- Reorganized both README files to:
+  - add an index near the top
+  - move installation, configuration, tools, and usage higher up
+  - move project/reference information lower down
+  - consolidate configuration guidance into a single section
+
 ## [0.1.0 - 03-23-2026]
 
 ### Added
