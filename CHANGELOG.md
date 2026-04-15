@@ -12,10 +12,12 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ### Changed
 - Existing projects can now be referenced by row number in project update operations, including bulk updates, while ambiguous references require clarification instead of guessing.
+- Row references such as `project 2` are intended for existing project rows only; invalid or out-of-range row references now fail rather than creating unintended new projects.
 
 ### Fixed
 - Added ambiguity detection for project row references so inputs like `project 2` do not silently target the wrong row when they could also refer to a literal project name.
-- Ensured bulk project updates treat out-of-range row references as errors instead of creating unintended new projects.
+- Ensured single-project and bulk project updates treat invalid or out-of-range row references as errors instead of creating unintended new projects.
+- Improved row-reference error messaging so singular and plural project counts use correct grammar.
 
 ### Documentation
 - Updated both README files to document:

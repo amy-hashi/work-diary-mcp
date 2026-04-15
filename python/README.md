@@ -176,7 +176,7 @@ The configured path is expanded automatically and the directory is created on fi
 | Tool | Description |
 |------|-------------|
 | `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
-| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
+| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Out-of-range row references are treated as errors rather than creating new projects. |
 | `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. |
 | `add_note` | Append a note to the general notes section. You can also target a specific week with `date`. |
 | `edit_note` | Replace the content of an existing note by its index number. You can also target a specific week with `date`. |
@@ -221,6 +221,7 @@ Edit note 2 in last week's diary: corrected the deployment summary
 Delete note 1 from 2 weeks ago
 Update Stacks on TFE to Blocked in last week's diary
 Update project 2 to Done
+Update all my projects: project 2 is Done, Alpha is At Risk, Gamma is On Track
 Clear the note on project 3
 Rename project 1 to Phoenix Rewrite
 Add a reminder for next week: follow up with the perf testing team
@@ -249,7 +250,7 @@ Reopen reminder 2 for last week
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — target diary weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week using natural language such as `"add a note to last week's diary"`
-- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, renaming, or clearing project notes
+- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, bulk updating, renaming, removing, or clearing project notes. If a reference like `"project 2"` could also mean a literal project named `Project 2`, the server will ask for clarification instead of guessing.
 - **Weekly reminders** — store reminders for the current week or future weeks without creating future diary pages, render them with checkboxes, and mark them complete as work is finished
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 
