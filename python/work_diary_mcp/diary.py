@@ -611,11 +611,12 @@ def _resolve_project_key_for_update(
 
     Returns an existing key when one can be resolved. Returns ``None`` when the
     reference does not identify an existing project and should be treated as a
-    new project name.
+    new literal project name, including positive out-of-range row-style
+    references such as ``project 9``.
 
     Raises:
         ValueError: If the project reference is ambiguous or if a row reference
-        such as ``project 0`` or ``project 9`` is invalid for the current table.
+        is non-positive, such as ``project 0``.
     """
     exact_match = next(
         (key for key in state["projects"] if key.lower() == project_ref.lower()),

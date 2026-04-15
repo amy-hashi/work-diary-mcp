@@ -1680,18 +1680,34 @@ class TestBulkUpdateProjects:
         with pytest.raises(ValueError, match="ambiguous"):
             diary_mod.bulk_update_projects(week_key, [{"project": "project 2", "status": "Done"}])
 
-    def test_invalid_row_reference_updates_existing_rows_in_bulk(self, diary_dir):
+    def test_out_of_range_positive_row_reference_creates_literal_project_in_bulk(self, diary_dir):
         week_key = "2026-03-02"
-        diary_mod.bulk_update_projects(week_key, [{"project": "project 1", "status": "Done"}])
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projects"]["project 1"] == "Done"
-
         diary_mod.update_project_status(week_key, "Alpha", "On Track")
         diary_mod.update_project_status(week_key, "Beta", "Blocked")
+
         diary_mod.bulk_update_projects(week_key, [{"project": "project 3", "status": "Done"}])
+
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
-        assert state["projects"]["Beta"] == "Done"
-        assert "project 3" not in state["projects"]
+        assert state["projects"] == {
+            "Alpha": "On Track",
+            "Beta": "Blocked",
+            "project 3": "Done",
+        }
+
+    def test_bulk_row_reference_uses_current_table_order(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.bulk_update_projects(week_key, [{"project": "project 1", "status": "Done"}])
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+
+        diary_mod.bulk_update_projects(week_key, [{"project": "project 3", "status": "Done"}])
+
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projects"] == {
+            "project 1": "Done",
+            "Alpha": "On Track",
+            "Beta": "Done",
+        }
 
     def test_zero_row_reference_raises(self, diary_dir):
         week_key = "2026-03-02"
