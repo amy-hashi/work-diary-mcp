@@ -556,6 +556,18 @@ def _project_row_reference_index(project_ref: str) -> int | None:
     return int(match.group(1))
 
 
+def _project_index_out_of_range_error(
+    week_key: str, row_index: int, project_count: int
+) -> ValueError:
+    """Build a consistent out-of-range error for project row references."""
+    return ValueError(
+        f"Project index {row_index} is out of range — "
+        f"there {'is' if project_count == 1 else 'are'} "
+        f"{project_count} project{'s' if project_count != 1 else ''} "
+        f"in the diary for the week of {get_week_label(week_key)}."
+    )
+
+
 def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref: str) -> str:
     """Resolve a project reference to an existing project key.
 
@@ -577,12 +589,7 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
     project_keys = list(state["projects"].keys())
 
     if row_index is not None and row_index < 1:
-        raise ValueError(
-            f"Project index {row_index} is out of range — "
-            f"there {'is' if len(project_keys) == 1 else 'are'} "
-            f"{len(project_keys)} project{'s' if len(project_keys) != 1 else ''} "
-            f"in the diary for the week of {get_week_label(week_key)}."
-        )
+        raise _project_index_out_of_range_error(week_key, row_index, len(project_keys))
 
     if row_index is not None and 1 <= row_index <= len(project_keys):
         row_match = project_keys[row_index - 1]
@@ -600,12 +607,7 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
         return resolved
 
     if row_index is not None:
-        raise ValueError(
-            f"Project index {row_index} is out of range — "
-            f"there {'is' if len(project_keys) == 1 else 'are'} "
-            f"{len(project_keys)} project{'s' if len(project_keys) != 1 else ''} "
-            f"in the diary for the week of {get_week_label(week_key)}."
-        )
+        raise _project_index_out_of_range_error(week_key, row_index, len(project_keys))
 
     raise ValueError(
         f'Project "{project_ref}" not found in the diary for the week of '
@@ -635,12 +637,7 @@ def _resolve_project_key_for_update(
     project_keys = list(state["projects"].keys())
 
     if row_index is not None and row_index < 1:
-        raise ValueError(
-            f"Project index {row_index} is out of range — "
-            f"there {'is' if len(project_keys) == 1 else 'are'} "
-            f"{len(project_keys)} project{'s' if len(project_keys) != 1 else ''} "
-            f"in the diary for the week of {get_week_label(week_key)}."
-        )
+        raise _project_index_out_of_range_error(week_key, row_index, len(project_keys))
 
     if exact_match is not None:
         row_match: str | None = None

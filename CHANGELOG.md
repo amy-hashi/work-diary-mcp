@@ -7,12 +7,11 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ## [0.2.0 - 03-28-2026]
 
 ### Added
-- Project row reference support for existing projects, allowing updates by table position with references such as `project 2`.
-- Bulk project update support for existing project row references, allowing bulk updates to target rows such as `project 2`.
+- Project row reference support for existing projects across update, bulk update, rename, remove, and clear-note operations, allowing references such as `project 2` to target a project by table position.
 
 ### Changed
-- Existing projects can now be referenced by row number in project update operations, including bulk updates, while ambiguous references require clarification instead of guessing.
-- Row references such as `project 2` resolve to existing project rows when in range; non-positive row references fail, and out-of-range positive references continue to fall back to literal project names.
+- Existing projects can now be referenced by row number in project update, bulk update, rename, remove, and clear-note operations, while ambiguous references require clarification instead of guessing.
+- Row references such as `project 2` resolve to existing project rows when in range; non-positive row references fail, and out-of-range positive references continue to fall back to literal project names for update operations.
 
 ### Fixed
 - Added ambiguity detection for project row references so inputs like `project 2` do not silently target the wrong row when they could also refer to a literal project name.
