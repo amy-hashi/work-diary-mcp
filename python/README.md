@@ -4,7 +4,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for man
 
 Interact with your diary conversationally via the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) or [Zed](https://zed.dev). The server writes Markdown files to disk that can be copied directly into Microsoft Loop (or any Markdown-compatible tool).
 
-See the [project changelog](../CHANGELOG.md) for release history and in-progress changes.
+For a running summary of changes, see [CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
@@ -18,40 +18,31 @@ See the [project changelog](../CHANGELOG.md) for release history and in-progress
 - [Features](#features)
 - [Supported Status Values](#supported-status-values)
 - [Jira Auto-Linking](#jira-auto-linking)
-- [Project Structure](#project-structure)
 - [Data Format](#data-format)
+- [Data Location](#data-location)
 - [Carry-Forward Behaviour](#carry-forward-behaviour)
+- [Project Structure](#project-structure)
 - [Testing](#testing)
 
 ---
 
 ## Quick Start
 
-### 1. Install `uv`
+### Prerequisites
 
-Install `uv` using the instructions for your platform in the official docs:
-
-<https://docs.astral.sh/uv/getting-started/installation/>
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/) — install it using the instructions for your platform in the official docs: <https://docs.astral.sh/uv/getting-started/installation/>
 
 This project is intended to work on both **macOS** and **Windows**. The examples below use Unix-style paths where needed; on Windows, use the equivalent local paths and `uv` executable location for your environment.
 
-### 2. Install dependencies
+### Install dependencies
 
 ```bash
 cd ~/work-diary-mcp/python
 uv sync
 ```
 
-### 3. Register with Claude CLI
-
-Use whatever `uv` executable path is correct for your platform:
-
-```bash
-claude mcp add work-diary /path/to/uv \
-  --directory $HOME/work-diary-mcp/python run work-diary-mcp
-```
-
-### 4. Register with Zed
+### Register with Zed
 
 Add to your Zed `settings.json` (`cmd+,`). This example shows a macOS-style path for `uv`; on Windows, use the path to `uv.exe` or another command that resolves to `uv` in your environment:
 
@@ -70,6 +61,15 @@ Add to your Zed `settings.json` (`cmd+,`). This example shows a macOS-style path
     }
   }
 }
+```
+
+### Register with Claude CLI
+
+Use whatever `uv` executable path is correct for your platform:
+
+```bash
+claude mcp add work-diary /path/to/uv \
+  --directory $HOME/work-diary-mcp/python run work-diary-mcp
 ```
 
 ---
@@ -151,7 +151,7 @@ Settings file keys:
 - `jira_base_url` — the base browse URL for your Jira instance
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
 
-`jira_base_url` must be a non-empty absolute URL and include a scheme such as `https://`.
+`jira_base_url` must be a non-empty URL and must include a scheme such as `https://`.
 
 The configured path is expanded automatically and the directory is created on first use.
 
@@ -175,30 +175,21 @@ The configured path is expanded automatically and the directory is created on fi
 
 | Tool | Description |
 |------|-------------|
-| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than creating errors. |
-| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than creating errors. |
-<<<<<<< HEAD
-| `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and row references must be in range for rename operations. |
-=======
-| `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. In-range `project N` references can resolve to a row, ambiguous row-style references raise an error, and `project 0` is always invalid. If `project N` is out of range, it only works when it matches an existing literal project name; otherwise it is treated as out of range. |
->>>>>>> refs/remotes/origin/ab-updates
-| `add_note` | Append a note to the general notes section. You can also target a specific week with `date`. |
-| `edit_note` | Replace the content of an existing note by its index number. You can also target a specific week with `date`. |
-| `delete_note` | Delete a note by its index number. You can also target a specific week with `date`. |
-| `add_reminder` | Add a reminder for the current week or a future week without creating a future diary page. Supports an optional `date` to target a specific week and an optional `due_date` to render before the reminder text. |
-| `list_reminders` | List all reminders for the target week. Supports an optional `date` to target a specific week. |
-| `complete_reminder` | Mark a reminder as complete for the target week. Supports an optional `date` to target a specific week. |
-| `reopen_reminder` | Mark a completed reminder as incomplete for the target week. Supports an optional `date` to target a specific week. |
+| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for rename operations. |
+| `add_note` | Append a note to the general notes section. Supports an optional `date` to target a specific week. |
+| `edit_note` | Replace the content of an existing note by its index number. Supports an optional `date` to target a specific week. |
+| `delete_note` | Delete a note by its index number. Supports an optional `date` to target a specific week. |
+| `add_reminder` | Add a reminder for the current or a future week without creating a future diary page. Supports an optional `due_date` and `date`. |
+| `list_reminders` | List reminders for the target week, including checkbox state and any due date. |
+| `complete_reminder` | Mark a reminder as completed for the target week. Supports an optional `date`. |
+| `reopen_reminder` | Mark a completed reminder as incomplete for the target week. Supports an optional `date`. |
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
-<<<<<<< HEAD
-| `remove_project` | Remove a project and its note from the target week. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and row references must be in range for removal. |
-| `clear_project_note` | Clear the inline note for a project, leaving its status intact. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and row references must be in range for note clearing. |
-=======
-| `remove_project` | Remove a project and its note from the target week. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. When interpreted as a row-style reference, `project N` must be positive and in range for removal. Exact literal project name matches are still allowed even if `N` is out of range, but `project 0` always raises an error. |
-| `clear_project_note` | Clear the inline note for a project, leaving its status intact. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Row-style references must be positive and in range for note clearing, so `project 0` always raises an error. |
->>>>>>> refs/remotes/origin/ab-updates
+| `remove_project` | Remove a project and its note from the target week. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for removal. |
+| `clear_project_note` | Clear the inline note for a project, leaving its status intact. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for note clearing. |
 
 ---
 
@@ -225,19 +216,19 @@ Edit note 2: corrected — the all-hands covered Q3 and Q4 roadmap
 Delete note 3
 PROJ-1234 is now On Track
 Add a note: opened PROJ-1234 and INFRA-5678 to track the rollout
-Add a note to last week's diary: followed up on rollout issues
-Edit note 2 in last week's diary: corrected the deployment summary
+Add a note to last week's diary: wrapped up the migration checklist
+Edit note 2 in last week's diary: corrected the rollout status
 Delete note 1 from 2 weeks ago
-Update Stacks on TFE to Blocked in last week's diary
+Update Stacks on TFE to Blocked in last week's diary with a note: waiting on dependency
 Update project 2 to Done
-Update all my projects: project 2 is Done, Alpha is At Risk, Gamma is On Track
 Clear the note on project 3
 Rename project 1 to Phoenix Rewrite
-Add a reminder for next week: follow up with the perf testing team
-Add a reminder for 2 weeks from now with due date Friday: confirm rollout checklist
+Add a reminder for next week: follow up with the perf team
+Add a reminder for next week with due date Friday: confirm rollout checklist
+Add a reminder in 4 weeks: prepare rollout notes
 List reminders for next week
-Complete reminder 1 for this week
-Reopen reminder 2 for last week
+Complete reminder 1 for next week
+Reopen reminder 1 for next week
 ```
 
 ---
@@ -258,9 +249,9 @@ Reopen reminder 2 for last week
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — target diary weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
-- **Previous-week write support** — add notes and update projects in a past week using natural language such as `"add a note to last week's diary"`
-- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, bulk updating, renaming, removing, or clearing project notes. If a reference like `"project 2"` could also mean a literal project named `Project 2`, the server will ask for clarification instead of guessing. `project 0` is always invalid, even if a literal project with that name exists. For update operations, out-of-range positive references are treated as literal project names rather than as errors.
-- **Weekly reminders** — store reminders for the current week or future weeks without creating future diary pages, render them with checkboxes, and mark them complete as work is finished
+- **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
+- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, bulk updating, renaming, removing, or clearing project notes. If a reference like `"project 2"` could also mean a literal project named `Project 2`, the server raises an ambiguity error instead of guessing. `project 0` is always invalid, even if a literal project with that name exists. Out-of-range positive references are treated as literal project names.
+- **Reminders** — store reminders for the current or future weeks without creating future diary pages, render them in a dedicated section, and mark them complete with checkboxes
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 
 ---
@@ -297,12 +288,11 @@ The default Jira configuration is:
 - **Prefixes:** `PROJ`, `INFRA`, `ENG`, `OPS`, `SEC`, `DATA`
 
 You can override these through either:
-
 - environment variables:
-  - `WORK_DIARY_JIRA_BASE_URL` — must be a non-empty absolute URL with a scheme such as `https://`
+  - `WORK_DIARY_JIRA_BASE_URL`
   - `WORK_DIARY_JIRA_PREFIXES` (comma-separated, for example `PROJ,INFRA,ENG`)
 - the settings file:
-  - `jira_base_url` — must be a non-empty absolute URL with a scheme such as `https://`
+  - `jira_base_url`
   - `jira_prefixes`
 
 Examples:
@@ -385,13 +375,26 @@ Each week's diary is stored as two files in the configured data directory, keyed
 
 ---
 
+## Data Location
+
+Diary files are stored in the configured data directory described in [Configuration](#configuration).
+
+Each week is represented by two files keyed on the Monday of that week:
+
+- `YYYY-MM-DD.json` — source of truth (raw state)
+- `YYYY-MM-DD.md` — rendered Markdown, ready to copy into Microsoft Loop
+
+Reminders are stored separately in:
+
+- `reminders.json` — source of truth for reminders across current and future weeks
+
+Write operations default to the current week, but can also target a specific week using a relative date or ISO date, including `"last week"`, `"next week"`, `"N weeks ago"`, `"N weeks from now"`, `"in N weeks"`, or values such as `"2026-03-02"`. If a past week does not yet exist, the server creates an empty diary page for that week instead of carrying forward state. Future reminders do not create future diary pages.
+
+---
+
 ## Carry-Forward Behaviour
 
 On the first interaction of each new week, a fresh diary page is created automatically. Non-terminal projects are copied forward from the most recent prior week so you never start from a blank slate.
-
-If you write to a past week that does not exist yet, the server creates an empty diary page for that week instead of carrying state forward retroactively.
-
-Reminders are stored separately from weekly diary pages, so you can add them for the current week or for future weeks without creating future diary files. When a week is rendered, reminders for that week appear in a `Reminders for this week` section before `Project Status`. If a reminder includes a due date, it is rendered first in the reminder text as `Due Date: <date>`. When reminders change for an existing week, the server refreshes that week's rendered Markdown file without creating diary pages for other weeks.
 
 Carry-forward behavior is currently:
 
@@ -399,6 +402,8 @@ Carry-forward behavior is currently:
 - **Project inline notes are not carried forward**
 - **General notes are not carried forward**
 - **Completed or cancelled projects are not carried forward**
+- **Reminders for that week are rendered in the new diary page without creating future diary pages ahead of time**
+- **When reminders change for an existing week, that week's persisted Markdown is regenerated**
 
 Projects with a terminal status such as **Done**, **Complete**, **Completed**, **Cancelled**, or **Canceled** stay in the week they were finished and will not clutter the new week's diary.
 
