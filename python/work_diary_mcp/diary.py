@@ -644,7 +644,7 @@ def _resolve_project_key_for_update(
         if row_index < 1:
             raise ValueError(
                 f"Project index {row_index} is out of range — "
-                f"there are {len(state['projects'])} "
+                f"there {'is' if len(state['projects']) == 1 else 'are'} {len(state['projects'])} "
                 f"project{'s' if len(state['projects']) != 1 else ''} "
                 f"in the diary for the week of {get_week_label(week_key)}."
             )
