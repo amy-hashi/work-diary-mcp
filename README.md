@@ -174,9 +174,9 @@ The configured path is expanded automatically and the directory is created on fi
 
 | Tool | Description |
 |------|-------------|
-| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. |
-| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. |
-| `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. |
+| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for rename operations. |
 | `add_note` | Append a note to the general notes section. Supports an optional `date` to target a specific week. |
 | `edit_note` | Replace the content of an existing note by its index number. Supports an optional `date` to target a specific week. |
 | `delete_note` | Delete a note by its index number. Supports an optional `date` to target a specific week. |
@@ -187,8 +187,8 @@ The configured path is expanded automatically and the directory is created on fi
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
-| `remove_project` | Remove a project and its note from the target week. Supports an optional `date` to target a specific week. |
-| `clear_project_note` | Clear the inline note for a project, leaving its status intact. Supports an optional `date` to target a specific week. |
+| `remove_project` | Remove a project and its note from the target week. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for removal. |
+| `clear_project_note` | Clear the inline note for a project, leaving its status intact. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for note clearing. |
 
 ---
 
@@ -219,6 +219,9 @@ Add a note to last week's diary: wrapped up the migration checklist
 Edit note 2 in last week's diary: corrected the rollout status
 Delete note 1 from 2 weeks ago
 Update Stacks on TFE to Blocked in last week's diary with a note: waiting on dependency
+Update project 2 to Done
+Clear the note on project 3
+Rename project 1 to Phoenix Rewrite
 Add a reminder for next week: follow up with the perf team
 Add a reminder for next week with due date Friday: confirm rollout checklist
 Add a reminder in 4 weeks: prepare rollout notes
@@ -238,6 +241,7 @@ Reopen reminder 1 for next week
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — target weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
 - **Previous-week write support** — add notes and update projects in a past week by specifying a date such as `"last week"` or `"2026-03-02"`
+- **Project row references** — refer to existing projects by table row using phrases like `"project 2"` when updating, bulk updating, renaming, removing, or clearing project notes. If a reference like `"project 2"` could also mean a literal project named `Project 2`, the server raises an ambiguity error instead of guessing. `project 0` is always invalid, even if a literal project with that name exists. Out-of-range positive references are treated as literal project names.
 - **Reminders** — store reminders for the current or future weeks without creating future diary pages, render them in a dedicated section, and mark them complete with checkboxes
 - **Configurable data directory** — store diary files in the repo default location or point the server at a custom directory
 

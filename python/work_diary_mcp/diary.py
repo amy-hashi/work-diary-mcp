@@ -548,6 +548,118 @@ def get_or_create_page_for_week(week_key: str) -> dict:
     return _ensure_week_page(normalized_week_key, carry_forward=False)
 
 
+def _project_row_reference_index(project_ref: str) -> int | None:
+    """Return the 1-based row index for a project reference like 'project 2'."""
+    match = re.fullmatch(r"\s*project\s+(\d+)\s*", project_ref, re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _project_index_out_of_range_error(
+    week_key: str, row_index: int, project_count: int
+) -> ValueError:
+    """Build a consistent out-of-range error for project row references."""
+    return ValueError(
+        f"Project index {row_index} is out of range — "
+        f"there {'is' if project_count == 1 else 'are'} "
+        f"{project_count} project{'s' if project_count != 1 else ''} "
+        f"in the diary for the week of {get_week_label(week_key)}."
+    )
+
+
+def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref: str) -> str:
+    """Resolve a project reference to an existing project key.
+
+    Supports:
+    - case-insensitive project name matching
+    - row references of the form ``project N``
+
+    Raises:
+        ValueError: If the project reference is ambiguous, out of range, or
+        does not resolve to an existing project.
+    """
+    exact_match = next(
+        (key for key in state["projects"] if key.lower() == project_ref.lower()),
+        None,
+    )
+
+    row_index = _project_row_reference_index(project_ref)
+    row_match: str | None = None
+    project_keys = list(state["projects"].keys())
+
+    if row_index is not None and row_index < 1:
+        raise _project_index_out_of_range_error(week_key, row_index, len(project_keys))
+
+    if row_index is not None and 1 <= row_index <= len(project_keys):
+        row_match = project_keys[row_index - 1]
+
+    if exact_match is not None and row_match is not None and exact_match != row_match:
+        raise ValueError(
+            f'Project reference "{project_ref}" is ambiguous in the diary for the week of '
+            f"{get_week_label(week_key)}. It matches both the literal project name "
+            f'"{exact_match}" and row {row_index} ("{row_match}"). Please clarify which '
+            "project you meant."
+        )
+
+    resolved = exact_match or row_match
+    if resolved is not None:
+        return resolved
+
+    if row_index is not None:
+        raise _project_index_out_of_range_error(week_key, row_index, len(project_keys))
+
+    raise ValueError(
+        f'Project "{project_ref}" not found in the diary for the week of '
+        f"{get_week_label(week_key)}."
+    )
+
+
+def _resolve_project_key_for_update(
+    state: DiaryState, week_key: str, project_ref: str
+) -> str | None:
+    """Resolve a project reference for update operations.
+
+    Returns an existing key when one can be resolved. Returns ``None`` when the
+    reference does not identify an existing project and should be treated as a
+    new literal project name, including positive out-of-range row-style
+    references such as ``project 9``.
+
+    Raises:
+        ValueError: If the project reference is ambiguous or if a row reference
+        is non-positive, such as ``project 0``.
+    """
+    exact_match = next(
+        (key for key in state["projects"] if key.lower() == project_ref.lower()),
+        None,
+    )
+    row_index = _project_row_reference_index(project_ref)
+    project_keys = list(state["projects"].keys())
+
+    if row_index is not None and row_index < 1:
+        raise _project_index_out_of_range_error(week_key, row_index, len(project_keys))
+
+    if exact_match is not None:
+        row_match: str | None = None
+        if row_index is not None and 1 <= row_index <= len(project_keys):
+            row_match = project_keys[row_index - 1]
+        if row_match is not None and row_match != exact_match:
+            raise ValueError(
+                f'Project reference "{project_ref}" is ambiguous in the diary for the week of '
+                f"{get_week_label(week_key)}. It matches both the literal project name "
+                f'"{exact_match}" and row {row_index} ("{row_match}"). Please clarify which '
+                "project you meant."
+            )
+        return exact_match
+
+    if row_index is not None:
+        if row_index <= len(project_keys):
+            return project_keys[row_index - 1]
+        return None
+
+    return None
+
+
 def update_project_status(
     week_key: str,
     project: str,
@@ -559,7 +671,7 @@ def update_project_status(
 
     Args:
         week_key:    The week to update.
-        project:     Project name (case-insensitive match against existing keys).
+        project:     Project name or row reference (e.g. 'project 2').
         status:      New status string.
         note:        Note text to set or append.
         append_note: When True and a note already exists, the new note is
@@ -569,8 +681,7 @@ def update_project_status(
     with _week_lock(week_key):
         state = _load_state(week_key)
 
-        # Case-insensitive match on existing keys to avoid duplicates
-        existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
+        existing_key = _resolve_project_key_for_update(state, week_key, project)
         key = existing_key or linkify_jira_refs(project)
         state["projects"][key] = status
 
@@ -593,12 +704,7 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
     with _week_lock(week_key):
         state = _load_state(week_key)
 
-        old_key = next((k for k in state["projects"] if k.lower() == old_name.lower()), None)
-        if old_key is None:
-            raise ValueError(
-                f'Project "{old_name}" not found in the diary for the week of '
-                f"{get_week_label(week_key)}."
-            )
+        old_key = _resolve_existing_project_key(state, week_key, old_name)
 
         # Prevent collisions with an existing different project
         collision = next(
@@ -647,10 +753,9 @@ def bulk_update_projects(
             note = item.get("note")
             append_note = bool(item.get("append_note", False))
 
-            existing_key = next(
-                (k for k in state["projects"] if k.lower() == project.lower()), None
-            )
+            existing_key = _resolve_project_key_for_update(state, week_key, project)
             key = existing_key or linkify_jira_refs(project)
+
             state["projects"][key] = status
 
             if note is not None:
@@ -671,12 +776,7 @@ def remove_project(week_key: str, project: str) -> None:
     with _week_lock(week_key):
         state = _load_state(week_key)
 
-        existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
-        if existing_key is None:
-            raise ValueError(
-                f'Project "{project}" not found in the diary for the week of '
-                f"{get_week_label(week_key)}."
-            )
+        existing_key = _resolve_existing_project_key(state, week_key, project)
 
         del state["projects"][existing_key]
         state["projectNotes"].pop(existing_key, None)
@@ -688,12 +788,7 @@ def clear_project_note(week_key: str, project: str) -> None:
     with _week_lock(week_key):
         state = _load_state(week_key)
 
-        existing_key = next((k for k in state["projects"] if k.lower() == project.lower()), None)
-        if existing_key is None:
-            raise ValueError(
-                f'Project "{project}" not found in the diary for the week of '
-                f"{get_week_label(week_key)}."
-            )
+        existing_key = _resolve_existing_project_key(state, week_key, project)
 
         state["projectNotes"].pop(existing_key, None)
         _save_state(state)
