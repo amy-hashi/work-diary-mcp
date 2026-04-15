@@ -177,7 +177,11 @@ The configured path is expanded automatically and the directory is created on fi
 |------|-------------|
 | `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than creating errors. |
 | `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than creating errors. |
+<<<<<<< HEAD
 | `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and row references must be in range for rename operations. |
+=======
+| `rename_project` | Rename a project, preserving its status and note. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. In-range `project N` references can resolve to a row, ambiguous row-style references raise an error, and `project 0` is always invalid. If `project N` is out of range, it only works when it matches an existing literal project name; otherwise it is treated as out of range. |
+>>>>>>> refs/remotes/origin/ab-updates
 | `add_note` | Append a note to the general notes section. You can also target a specific week with `date`. |
 | `edit_note` | Replace the content of an existing note by its index number. You can also target a specific week with `date`. |
 | `delete_note` | Delete a note by its index number. You can also target a specific week with `date`. |
@@ -188,8 +192,13 @@ The configured path is expanded automatically and the directory is created on fi
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
 | `list_projects` | List all projects and their statuses for the current or any past week. |
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
+<<<<<<< HEAD
 | `remove_project` | Remove a project and its note from the target week. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and row references must be in range for removal. |
 | `clear_project_note` | Clear the inline note for a project, leaving its status intact. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row-style references raise an error, `project 0` is always invalid, and row references must be in range for note clearing. |
+=======
+| `remove_project` | Remove a project and its note from the target week. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. When interpreted as a row-style reference, `project N` must be positive and in range for removal. Exact literal project name matches are still allowed even if `N` is out of range, but `project 0` always raises an error. |
+| `clear_project_note` | Clear the inline note for a project, leaving its status intact. You can also target a specific week with `date`. Existing projects can also be referenced by row number, for example `project 2`. Row-style references must be positive and in range for note clearing, so `project 0` always raises an error. |
+>>>>>>> refs/remotes/origin/ab-updates
 
 ---
 
