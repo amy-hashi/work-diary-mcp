@@ -1462,6 +1462,18 @@ class TestUpdateProjectStatus:
         with pytest.raises(ValueError, match="out of range"):
             diary_mod.update_project_status(week_key, "project 0", "Done")
 
+    def test_literal_project_zero_still_raises_for_update(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.update_project_status(week_key, "project 0", "Done")
+
     def test_sets_note(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", note="going well")
@@ -1714,6 +1726,18 @@ class TestBulkUpdateProjects:
         with pytest.raises(ValueError, match="out of range"):
             diary_mod.bulk_update_projects(week_key, [{"project": "project 0", "status": "Done"}])
 
+    def test_literal_project_zero_still_raises_in_bulk(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.bulk_update_projects(week_key, [{"project": "project 0", "status": "Done"}])
+
     def test_mixed_existing_row_and_new_project(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track")
@@ -1785,6 +1809,18 @@ class TestRemoveProject:
         with pytest.raises(ValueError, match="there are 2 projects"):
             diary_mod.remove_project(week_key, "project 3")
 
+    def test_literal_project_zero_still_raises_for_remove(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.remove_project(week_key, "project 0")
+
 
 # ---------------------------------------------------------------------------
 # clear_project_note
@@ -1829,6 +1865,18 @@ class TestClearProjectNote:
         diary_mod.update_project_status(week_key, "Beta", "On Track", note="ready")
         with pytest.raises(ValueError, match="there are 2 projects"):
             diary_mod.clear_project_note(week_key, "project 3")
+
+    def test_literal_project_zero_still_raises_for_clear_note(self, diary_dir):
+        week_key = "2026-03-02"
+        preexisting = {
+            "weekKey": week_key,
+            "projects": {"Project 0": "On Track"},
+            "projectNotes": {"Project 0": "still here"},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(preexisting), encoding="utf-8")
+        with pytest.raises(ValueError, match="out of range"):
+            diary_mod.clear_project_note(week_key, "project 0")
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ### Fixed
 - Added ambiguity detection for project row references so inputs like `project 2` do not silently target the wrong row when they could also refer to a literal project name.
-- Improved handling and documentation of row-reference edge cases so non-positive indices fail with clear errors while out-of-range positive references can still be treated as literal project names.
+- Improved handling and documentation of row-reference edge cases so non-positive indices fail with clear errors, including when a literal project named `Project 0` exists, while out-of-range positive references can still be treated as literal project names.
 - Improved row-reference error messaging so singular and plural project counts use correct grammar.
 
 ### Documentation
