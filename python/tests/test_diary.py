@@ -1076,6 +1076,8 @@ class TestStatuses:
             "done",
             "Done",
             "DONE",
+            "complete",
+            "Complete",
             "completed",
             "cancelled",
             "canceled",
@@ -1089,7 +1091,16 @@ class TestStatuses:
     def test_is_completed_false(self):
         from work_diary_mcp.statuses import is_completed
 
-        for status in ("on track", "blocked", "at risk", "in progress", "paused", "in planning"):
+        for status in (
+            "on track",
+            "blocked",
+            "at risk",
+            "in progress",
+            "paused",
+            "in planning",
+            "In Planning",
+            "  In Planning  ",
+        ):
             assert not is_completed(status), f"Expected {status!r} not to be completed"
 
     def test_format_status_known(self):
