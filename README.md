@@ -264,6 +264,9 @@ Well-known statuses are automatically formatted with emoji. Any other string is 
 | Cancelled | ⛔ Cancelled |
 | Canceled | ⛔ Canceled |
 | Paused | ⏸️ Paused |
+| Shipped | 🚀 Shipped |
+| GA | 🚀 GA |
+| In Planning | 💡 In Planning |
 
 Terminal statuses are used to decide what should not be carried forward into a new week.
 
@@ -376,7 +379,7 @@ Carry-forward behavior is currently:
 - **Reminders for that week are rendered in the new diary page without creating future diary pages ahead of time**
 - **When reminders change for an existing week, that week's persisted Markdown is regenerated**
 
-Projects with a terminal status such as **Done**, **Complete**, **Completed**, **Cancelled**, or **Canceled** stay in the week they were finished and will not clutter the new week's diary.
+Projects with a terminal status such as **Done**, **Complete**, **Completed**, **Cancelled**, **Canceled**, **Shipped**, or **GA** stay in the week they were finished and will not clutter the new week's diary.
 
 ---
 
