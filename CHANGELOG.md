@@ -8,7 +8,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ### Fixed
 - Removed `@lru_cache` from the Jira ticket regex builder so prefix configuration changes are picked up correctly instead of returning a stale regex.
-- `_save_state` now reads reminder state under `_reminder_lock`, closing a race where a concurrent reminder write could leave the persisted Markdown out of sync. Reminders are threaded through from `_save_reminder_state` to avoid self-deadlocking the existing reminder-driven refresh path.
+- Week-write paths now acquire `_reminder_lock` before `_week_lock` via a new `_week_write` helper, establishing a single canonical lock ordering across week-write and reminder-write code paths. This closes both a race where a concurrent reminder write could leave the persisted Markdown out of sync and an AB/BA deadlock that would have occurred if `_save_state` acquired the reminder lock from underneath the week lock. `_save_state` now requires reminders to be supplied by the caller so the dangerous fallback path cannot be reintroduced.
 - `get_or_create_page_for_week` now applies carry-forward when the supplied ISO date resolves to the current week, preventing direct callers from silently creating an empty current-week page.
 - `list_projects` now normalizes the supplied week key to that week's Monday, matching `list_reminders` and `get_diary_markdown`.
 
