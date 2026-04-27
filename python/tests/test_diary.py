@@ -1064,7 +1064,7 @@ class TestStatuses:
         from work_diary_mcp.statuses import COMPLETED_STATUSES, STATUS_MAP
 
         for key, display in STATUS_MAP.items():
-            if display.startswith(("✅", "⛔")):
+            if display.startswith(("✅", "⛔", "🚀")):
                 assert key in COMPLETED_STATUSES
             else:
                 assert key not in COMPLETED_STATUSES
@@ -1072,13 +1072,24 @@ class TestStatuses:
     def test_is_completed_true(self):
         from work_diary_mcp.statuses import is_completed
 
-        for status in ("done", "Done", "DONE", "completed", "cancelled", "canceled"):
+        for status in (
+            "done",
+            "Done",
+            "DONE",
+            "completed",
+            "cancelled",
+            "canceled",
+            "shipped",
+            "Shipped",
+            "ga",
+            "GA",
+        ):
             assert is_completed(status), f"Expected {status!r} to be completed"
 
     def test_is_completed_false(self):
         from work_diary_mcp.statuses import is_completed
 
-        for status in ("on track", "blocked", "at risk", "in progress", "paused"):
+        for status in ("on track", "blocked", "at risk", "in progress", "paused", "in planning"):
             assert not is_completed(status), f"Expected {status!r} not to be completed"
 
     def test_format_status_known(self):
@@ -1086,6 +1097,9 @@ class TestStatuses:
 
         assert format_status("on track") == "🟢 On Track"
         assert format_status("  Done  ") == "✅ Done"
+        assert format_status("shipped") == "🚀 Shipped"
+        assert format_status("GA") == "🚀 GA"
+        assert format_status("in planning") == "💡 In Planning"
 
     def test_format_status_unknown_passthrough(self):
         from work_diary_mcp.statuses import format_status
