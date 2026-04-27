@@ -389,16 +389,19 @@ def _save_reminder_state(state: ReminderState, refresh_week_keys: set[str] | Non
         diary_path = _diary_path(week_key)
         if diary_path.exists():
             with _week_lock(week_key):
-                _save_state(_load_state(week_key))
+                reminders_for_week = validated["reminders"].get(week_key, [])
+                _save_state(_load_state(week_key), reminders=reminders_for_week)
 
 
-def _save_state(state: DiaryState) -> None:
+def _save_state(state: DiaryState, reminders: list[ReminderEntry] | None = None) -> None:
     from work_diary_mcp.markdown import render_diary  # avoid circular import
 
     validated = _validate_state(state)
     week_key = validated["weekKey"]
-    reminder_state = _load_reminder_state()
-    reminders = reminder_state["reminders"].get(week_key, [])
+    if reminders is None:
+        with _reminder_lock():
+            reminder_state = _load_reminder_state()
+            reminders = reminder_state["reminders"].get(week_key, [])
 
     json_content = json.dumps(validated, indent=2, ensure_ascii=False)
     markdown_content = render_diary(
@@ -541,11 +544,13 @@ def get_or_create_page_for_week(week_key: str) -> dict:
     The supplied week key may be any ISO date within the target week; it is
     normalized to that week's Monday before the page is created or loaded.
 
-    Historical weeks are created empty rather than carrying forward state from
-    adjacent weeks.
+    Historical weeks are created empty rather than carrying forward state. If
+    the supplied week resolves to the current week, carry-forward behavior is
+    applied so direct callers don't accidentally bypass it.
     """
     normalized_week_key = get_week_key(date.fromisoformat(week_key))
-    return _ensure_week_page(normalized_week_key, carry_forward=False)
+    carry_forward = normalized_week_key == get_week_key()
+    return _ensure_week_page(normalized_week_key, carry_forward=carry_forward)
 
 
 def _project_row_reference_index(project_ref: str) -> int | None:
@@ -869,8 +874,13 @@ def get_diary_markdown(week_key: str) -> str:
 
 
 def list_projects(week_key: str) -> dict[str, str]:
-    """Return the projects dict for the given week."""
-    return _load_state(week_key)["projects"]
+    """Return the projects dict for the given week.
+
+    The supplied week key may be any ISO date within the target week; it is
+    normalized to that week's Monday before lookup.
+    """
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    return _load_state(normalized_week_key)["projects"]
 
 
 def list_week_keys() -> list[str]:
