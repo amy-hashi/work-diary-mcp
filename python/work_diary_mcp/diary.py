@@ -393,15 +393,18 @@ def _save_reminder_state(state: ReminderState, refresh_week_keys: set[str] | Non
                 _save_state(_load_state(week_key), reminders=reminders_for_week)
 
 
-def _save_state(state: DiaryState, reminders: list[ReminderEntry] | None = None) -> None:
+def _save_state(state: DiaryState, reminders: list[ReminderEntry]) -> None:
+    """Persist diary state and rendered Markdown for a week.
+
+    *reminders* must be supplied by the caller. Callers acquiring both the
+    reminder and week locks must do so via :func:`_week_write` (or in the
+    canonical reminder→week order) to avoid deadlock with reminder-driven
+    refresh paths.
+    """
     from work_diary_mcp.markdown import render_diary  # avoid circular import
 
     validated = _validate_state(state)
     week_key = validated["weekKey"]
-    if reminders is None:
-        with _reminder_lock():
-            reminder_state = _load_reminder_state()
-            reminders = reminder_state["reminders"].get(week_key, [])
 
     json_content = json.dumps(validated, indent=2, ensure_ascii=False)
     markdown_content = render_diary(
@@ -413,6 +416,28 @@ def _save_state(state: DiaryState, reminders: list[ReminderEntry] | None = None)
 
     _atomic_write_text(_diary_path(week_key), json_content)
     _atomic_write_text(_markdown_path(week_key), markdown_content)
+
+
+@contextmanager
+def _week_write(week_key: str):
+    """Acquire both the reminder and week locks in canonical order.
+
+    Always takes ``_reminder_lock`` before ``_week_lock(week_key)`` so that
+    week-update paths and reminder-update paths share a single global lock
+    ordering. This eliminates the AB/BA deadlock that would otherwise occur
+    if a week-write tried to acquire the reminder lock from underneath the
+    week lock while a concurrent reminder-write held the locks in the
+    opposite order.
+
+    Yields the reminders snapshot for *week_key*, loaded under the reminder
+    lock, so callers can pass it directly to :func:`_save_state` without
+    re-reading reminder state.
+    """
+    with _reminder_lock():
+        reminder_state = _load_reminder_state()
+        reminders = list(reminder_state["reminders"].get(week_key, []))
+        with _week_lock(week_key):
+            yield reminders
 
 
 # --------------------------------------------------------------------------- #
@@ -506,7 +531,7 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
     week_label = get_week_label(week_key)
     is_new = False
 
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         if not _diary_path(week_key).exists():
             initial_state = (
                 _get_carry_forward_state(week_key)
@@ -519,7 +544,8 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
                     "projects": initial_state["projects"],
                     "projectNotes": initial_state["projectNotes"],
                     "notes": [],
-                }
+                },
+                reminders=reminders,
             )
             is_new = True
 
@@ -683,7 +709,7 @@ def update_project_status(
                      appended (separated by " — ") rather than replacing it.
                      Has no effect when no prior note exists.
     """
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
 
         existing_key = _resolve_project_key_for_update(state, week_key, project)
@@ -697,7 +723,7 @@ def update_project_status(
             else:
                 state["projectNotes"][key] = linkified_note
 
-        _save_state(state)
+        _save_state(state, reminders=reminders)
 
 
 def rename_project(week_key: str, old_name: str, new_name: str) -> None:
@@ -706,7 +732,7 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
     Raises ValueError if *old_name* is not found, or if *new_name* already
     exists (case-insensitive) as a different project.
     """
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
 
         old_key = _resolve_existing_project_key(state, week_key, old_name)
@@ -731,7 +757,7 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
             (linked_new_name if k == old_key else k): v for k, v in state["projectNotes"].items()
         }
 
-        _save_state(state)
+        _save_state(state, reminders=reminders)
 
 
 def bulk_update_projects(
@@ -748,7 +774,7 @@ def bulk_update_projects(
 
     Returns a list of human-readable result strings, one per project.
     """
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
         results: list[str] = []
 
@@ -772,31 +798,31 @@ def bulk_update_projects(
 
             results.append(f"{key} → {status}")
 
-        _save_state(state)
+        _save_state(state, reminders=reminders)
         return results
 
 
 def remove_project(week_key: str, project: str) -> None:
     """Remove a project and its note from the diary."""
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
 
         existing_key = _resolve_existing_project_key(state, week_key, project)
 
         del state["projects"][existing_key]
         state["projectNotes"].pop(existing_key, None)
-        _save_state(state)
+        _save_state(state, reminders=reminders)
 
 
 def clear_project_note(week_key: str, project: str) -> None:
     """Clear the inline note for a project, leaving its status intact."""
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
 
         existing_key = _resolve_existing_project_key(state, week_key, project)
 
         state["projectNotes"].pop(existing_key, None)
-        _save_state(state)
+        _save_state(state, reminders=reminders)
 
 
 def add_note(week_key: str, content: str) -> None:
@@ -805,11 +831,11 @@ def add_note(week_key: str, content: str) -> None:
     No automatic timestamp is stored. If the content contains an explicit
     date or time reference it is preserved as-is within the content string.
     """
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
         entry: NoteEntry = {"content": linkify_jira_refs(content)}
         state["notes"].append(entry)
-        _save_state(state)
+        _save_state(state, reminders=reminders)
 
 
 def edit_note(week_key: str, index: int, new_content: str) -> None:
@@ -819,7 +845,7 @@ def edit_note(week_key: str, index: int, new_content: str) -> None:
     of range.  Any legacy ``timestamp`` field on the entry is left intact
     so that old diary files can be loaded and saved without losing data.
     """
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
         notes = state["notes"]
 
@@ -832,7 +858,7 @@ def edit_note(week_key: str, index: int, new_content: str) -> None:
             )
 
         notes[index - 1]["content"] = linkify_jira_refs(new_content)
-        _save_state(state)
+        _save_state(state, reminders=reminders)
 
 
 def delete_note(week_key: str, index: int) -> str:
@@ -841,7 +867,7 @@ def delete_note(week_key: str, index: int) -> str:
     Returns the content of the deleted note.  Raises ValueError if the
     index is out of range.
     """
-    with _week_lock(week_key):
+    with _week_write(week_key) as reminders:
         state = _load_state(week_key)
         notes = state["notes"]
 
@@ -854,7 +880,7 @@ def delete_note(week_key: str, index: int) -> str:
             )
 
         removed = notes.pop(index - 1)
-        _save_state(state)
+        _save_state(state, reminders=reminders)
         return removed["content"]
 
 
