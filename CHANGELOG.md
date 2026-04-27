@@ -4,7 +4,18 @@ All notable changes to `work-diary-mcp` will be documented in this file.
 
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows a simple versioned changelog structure.
 
-## [0.2.0 - 03-28-2026]
+## [Unreleased]
+
+### Fixed
+- Removed `@lru_cache` from the Jira ticket regex builder so prefix configuration changes are picked up correctly instead of returning a stale regex.
+- Week-write paths now acquire `_reminder_lock` before `_week_lock` via a new `_week_write` helper, establishing a single canonical lock ordering across week-write and reminder-write code paths. This closes both a race where a concurrent reminder write could leave the persisted Markdown out of sync and an AB/BA deadlock that would have occurred if `_save_state` acquired the reminder lock from underneath the week lock. `_save_state` now requires reminders to be supplied by the caller so the dangerous fallback path cannot be reintroduced.
+- `get_or_create_page_for_week` now applies carry-forward when the supplied ISO date resolves to the current week, preventing direct callers from silently creating an empty current-week page.
+- `list_projects` now normalizes the supplied week key to that week's Monday, matching `list_reminders` and `get_diary_markdown`.
+
+### Documentation
+- Reformatted `CHANGELOG.md` to follow Keep a Changelog conventions: `[Unreleased]` lives at the top, version headers use `## [X.Y.Z] - YYYY-MM-DD`, and the redundant trailing `[Unreleased]` block has been removed.
+
+## [0.2.0] - 2026-03-28
 
 ### Added
 - Project row reference support for existing projects across update, bulk update, rename, remove, and clear-note operations, allowing references such as `project 2` to target a project by table position.
@@ -27,7 +38,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
   - move project/reference information lower down
   - consolidate configuration guidance into a single section
 
-## [0.1.0 - 03-23-2026]
+## [0.1.0] - 2026-03-23
 
 ### Added
 - Support for writing to previous diary weeks across write operations, including:
@@ -115,12 +126,3 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
   - reminder Markdown refresh behavior
   - updated tool descriptions and usage examples
 - Added a top-level `CHANGELOG.md` and linked it from both README files.
-
-## [Unreleased]
-- Initial Python-based MCP server for managing weekly work diaries.
-- Project status tracking with inline notes.
-- General note capture.
-- Carry-forward behavior for non-completed projects.
-- Markdown rendering for easy reuse in Microsoft Loop.
-- Jira auto-linking support.
-- FastMCP-based stdio server implementation.
