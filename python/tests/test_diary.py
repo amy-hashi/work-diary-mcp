@@ -1631,10 +1631,10 @@ class TestBulkUpdateProjects:
         save_count = 0
         original_save = diary_mod._save_state
 
-        def counting_save(state):
+        def counting_save(state, reminders):
             nonlocal save_count
             save_count += 1
-            original_save(state)
+            original_save(state, reminders=reminders)
 
         with patch.object(diary_mod, "_save_state", side_effect=counting_save):
             diary_mod.bulk_update_projects(week_key, updates)
