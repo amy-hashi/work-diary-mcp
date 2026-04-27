@@ -17,14 +17,17 @@ STATUS_MAP: dict[str, str] = {
     "cancelled": "⛔ Cancelled",
     "canceled": "⛔ Canceled",
     "paused": "⏸️ Paused",
+    "shipped": "🚀 Shipped",
+    "ga": "🚀 GA",
+    "in planning": "💡 In Planning",
 }
 
 # Statuses that indicate a project is finished and should not be carried
 # forward to a new week.  Derived directly from STATUS_MAP so the two can
-# never drift apart: any key whose formatted value starts with "✅" or "⛔"
-# is considered terminal.
+# never drift apart: any key whose formatted value starts with "✅", "⛔",
+# or "🚀" is considered terminal.
 COMPLETED_STATUSES: frozenset[str] = frozenset(
-    key for key, display in STATUS_MAP.items() if display.startswith(("✅", "⛔"))
+    key for key, display in STATUS_MAP.items() if display.startswith(("✅", "⛔", "🚀"))
 )
 
 
