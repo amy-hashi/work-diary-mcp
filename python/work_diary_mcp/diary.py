@@ -1,7 +1,10 @@
+import copy
 import json
 import os
 import re
 import tempfile
+import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
@@ -277,8 +280,182 @@ def _migrate_reminder_state(state: ReminderState) -> ReminderState:
     return state
 
 
+# --------------------------------------------------------------------------- #
+# In-process caches and locks
+# --------------------------------------------------------------------------- #
+
+# Per-week threading locks use a fixed-size stripe array rather than a
+# growing dict keyed by week_key. This bounds memory to a constant
+# regardless of how many distinct historical weeks the server touches
+# over its lifetime, and avoids the correctness pitfall of evicting a
+# lock that another thread might still be holding (which would silently
+# break mutual exclusion when a fresh lock instance is created for the
+# same week_key).
+#
+# Two threads acting on the same week_key always map to the same stripe
+# (mutual exclusion preserved). Two threads acting on different week_keys
+# that hash to the same stripe will occasionally contend with each other,
+# but this server's per-call work is sub-millisecond and concurrent tool
+# invocations are rare, so the false-sharing cost is negligible.
+_WEEK_LOCK_STRIPES: int = 64
+_WEEK_THREADING_LOCKS: tuple[threading.Lock, ...] = tuple(
+    threading.Lock() for _ in range(_WEEK_LOCK_STRIPES)
+)
+_REMINDER_THREADING_LOCK = threading.Lock()
+
+# Guards all reads, writes, and eviction sweeps over ``_ENSURED_PAGES``.
+# A dedicated lock keeps the short-circuit safe under concurrent tool
+# calls without blocking on any per-week or reminder lock.
+_ENSURED_PAGES_LOCK = threading.Lock()
+
+# Parsed-state caches keyed by file path. The cached value is a tuple of
+# ``(fingerprint, deep-copied state)`` where ``fingerprint`` is
+# ``(st_mtime_ns, st_size)``. Entries are returned as deep copies so
+# callers can freely mutate the returned dict without corrupting the
+# cache, and the cache is invalidated when either field changes — which
+# catches both ordinary external edits (mtime bumps) and the realistic
+# defense-in-depth case where a tool preserves or restores mtime
+# (``cp -p``, ``rsync --times``, restoring from backup, ``os.utime``,
+# etc.) but the replacement file's size differs.
+#
+# Each cache is an ``OrderedDict`` used as an LRU: on every access (read
+# hit or write) the entry is moved to the most-recently-used end, and
+# inserts beyond the configured maximum evict the least-recently-used
+# entry. This bounds memory usage on long-running servers that touch
+# many historical weeks. Reminder state has only ever one entry in
+# practice (a single ``reminders.json``) but uses the same machinery for
+# symmetry. All access is serialized by ``_STATE_CACHE_LOCK`` /
+# ``_REMINDER_STATE_CACHE_LOCK`` so the LRU ordering and eviction stay
+# consistent under concurrent tool calls.
+_STATE_CACHE_MAX_ENTRIES: int = 32
+_REMINDER_STATE_CACHE_MAX_ENTRIES: int = 4
+_StateFingerprint = tuple[int, int]
+_STATE_CACHE: "OrderedDict[Path, tuple[_StateFingerprint, DiaryState]]" = OrderedDict()
+_REMINDER_STATE_CACHE: "OrderedDict[Path, tuple[_StateFingerprint, ReminderState]]" = OrderedDict()
+_STATE_CACHE_LOCK = threading.Lock()
+_REMINDER_STATE_CACHE_LOCK = threading.Lock()
+
+
+def _stat_fingerprint(path: Path) -> _StateFingerprint | None:
+    """Return a ``(mtime_ns, size)`` fingerprint for *path*, or None on error."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+# Memoized "this page already exists on disk" results for
+# :func:`_ensure_week_page`, keyed by ``(today's ISO date, week_key)``.
+# Avoids re-acquiring locks and re-stat'ing the diary file on every tool
+# call within the same day.
+_ENSURED_PAGES: dict[tuple[str, str], dict] = {}
+
+
+def _file_locks_enabled() -> bool:
+    """Return True if filesystem locks should be acquired in addition to
+    in-process threading locks.
+
+    Off by default for performance. Set ``WORK_DIARY_FILE_LOCKS=1`` (or
+    any truthy value) to enable, which is needed only when multiple
+    processes may write to the same data directory.
+    """
+    raw = os.environ.get("WORK_DIARY_FILE_LOCKS", "").strip().lower()
+    return raw not in ("", "0", "false", "no", "off")
+
+
+def _get_week_threading_lock(week_key: str) -> threading.Lock:
+    """Return the per-week in-process lock for *week_key*.
+
+    Uses a fixed-size lock-stripe array indexed by ``hash(week_key)`` so
+    the lock registry never grows. Two calls with the same ``week_key``
+    always return the same lock object, preserving mutual exclusion.
+    Different ``week_key`` values may occasionally collide on the same
+    stripe; given sub-millisecond per-call work and effectively no
+    concurrent tool invocations on this server, the resulting false
+    sharing is negligible.
+    """
+    return _WEEK_THREADING_LOCKS[hash(week_key) % _WEEK_LOCK_STRIPES]
+
+
+def _reset_caches() -> None:
+    """Clear all in-process caches.
+
+    Stripe locks are not reset — they are stateless when not held, and
+    re-creating them mid-test could break mutual exclusion if any code
+    were holding a reference to the old instance.
+
+    Intended for tests that swap data directories between cases.
+    """
+    with _STATE_CACHE_LOCK:
+        _STATE_CACHE.clear()
+    with _REMINDER_STATE_CACHE_LOCK:
+        _REMINDER_STATE_CACHE.clear()
+    with _ENSURED_PAGES_LOCK:
+        _ENSURED_PAGES.clear()
+
+
+def _cache_state(path: Path, state: DiaryState) -> None:
+    """Refresh the parsed-state cache after a successful save.
+
+    Marks the entry as most-recently-used and evicts the
+    least-recently-used entry if the cache would exceed
+    ``_STATE_CACHE_MAX_ENTRIES``.
+
+    Note: this fingerprints *path* after the rename has already landed.
+    Under the documented single-writer assumption (the default; see
+    ``WORK_DIARY_FILE_LOCKS`` for multi-writer deployments) the file on
+    disk corresponds exactly to *state*. If a concurrent external writer
+    were to replace the file between the rename and this stat call, the
+    cached fingerprint could end up associated with their content rather
+    than ours; defending against that fully would require holding a
+    file lock around the entire write+stat sequence, which is exactly
+    what enabling ``WORK_DIARY_FILE_LOCKS`` provides.
+    """
+    fingerprint = _stat_fingerprint(path)
+    if fingerprint is None:
+        return
+    snapshot = copy.deepcopy(state)
+    with _STATE_CACHE_LOCK:
+        _STATE_CACHE[path] = (fingerprint, snapshot)
+        _STATE_CACHE.move_to_end(path)
+        while len(_STATE_CACHE) > _STATE_CACHE_MAX_ENTRIES:
+            _STATE_CACHE.popitem(last=False)
+
+
+def _cache_reminder_state(path: Path, state: ReminderState) -> None:
+    """Refresh the parsed reminder-state cache after a successful save.
+
+    Marks the entry as most-recently-used and evicts the
+    least-recently-used entry if the cache would exceed
+    ``_REMINDER_STATE_CACHE_MAX_ENTRIES``.
+
+    The same single-writer assumption documented on :func:`_cache_state`
+    applies here: this fingerprints *path* after the rename, and under
+    multi-writer deployments callers should enable
+    ``WORK_DIARY_FILE_LOCKS`` so the entire write+stat sequence is
+    serialized at the filesystem level.
+    """
+    fingerprint = _stat_fingerprint(path)
+    if fingerprint is None:
+        return
+    snapshot = copy.deepcopy(state)
+    with _REMINDER_STATE_CACHE_LOCK:
+        _REMINDER_STATE_CACHE[path] = (fingerprint, snapshot)
+        _REMINDER_STATE_CACHE.move_to_end(path)
+        while len(_REMINDER_STATE_CACHE) > _REMINDER_STATE_CACHE_MAX_ENTRIES:
+            _REMINDER_STATE_CACHE.popitem(last=False)
+
+
 def _atomic_write_text(path: Path, content: str) -> None:
-    """Atomically write text content to *path*."""
+    """Atomically write text content to *path*.
+
+    Uses a tempfile + rename for application-level atomicity. We do not
+    call ``os.fsync`` here: the diary is a personal productivity tool, and
+    the rename already protects against partial writes for the failure
+    modes we actually care about (process crash, concurrent reads). The
+    fsync was previously the dominant per-call latency on macOS APFS.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     existing_mode = path.stat().st_mode if path.exists() else None
     fd, temp_path_str = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
@@ -288,108 +465,213 @@ def _atomic_write_text(path: Path, content: str) -> None:
             os.fchmod(fd, existing_mode & 0o777)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(content)
-            fh.flush()
-            os.fsync(fh.fileno())
         temp_path.replace(path)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        # Use missing_ok=True so a race with an external cleanup (or the
+        # successful rename above, which moves temp_path away) does not
+        # raise here. This avoids a TOCTOU window between exists() and
+        # unlink() that could otherwise surface as a spurious error.
+        temp_path.unlink(missing_ok=True)
 
 
 @contextmanager
 def _week_lock(week_key: str):
-    """Take an exclusive filesystem lock for a week's diary state."""
-    lock_path = get_data_dir() / f"{week_key}.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    """Take an exclusive lock for a week's diary state.
 
-    if os.name == "nt":
-        import msvcrt
+    Always acquires the in-process per-week threading lock. Additionally
+    acquires a filesystem lock when ``WORK_DIARY_FILE_LOCKS`` is enabled,
+    which is needed only for multi-process safety.
+    """
+    threading_lock = _get_week_threading_lock(week_key)
+    threading_lock.acquire()
+    try:
+        if not _file_locks_enabled():
+            yield
+            return
 
-        with lock_path.open("a+b") as lock_file:
-            lock_file.seek(0)
-            if lock_file.read(1) == b"":
+        lock_path = get_data_dir() / f"{week_key}.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if os.name == "nt":
+            import msvcrt
+
+            with lock_path.open("a+b") as lock_file:
                 lock_file.seek(0)
-                lock_file.write(b"0")
-                lock_file.flush()
-            lock_file.seek(0)
-            try:
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-                yield
-            finally:
+                if lock_file.read(1) == b"":
+                    lock_file.seek(0)
+                    lock_file.write(b"0")
+                    lock_file.flush()
                 lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        import fcntl
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    yield
+                finally:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
 
-        with lock_path.open("a+", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            with lock_path.open("a+", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        threading_lock.release()
 
 
 @contextmanager
 def _reminder_lock():
-    """Take an exclusive filesystem lock for reminder state."""
-    lock_path = get_data_dir() / "reminders.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    """Take an exclusive lock for reminder state.
 
-    if os.name == "nt":
-        import msvcrt
+    Always acquires the in-process reminder threading lock. Additionally
+    acquires a filesystem lock when ``WORK_DIARY_FILE_LOCKS`` is enabled.
+    """
+    _REMINDER_THREADING_LOCK.acquire()
+    try:
+        if not _file_locks_enabled():
+            yield
+            return
 
-        with lock_path.open("a+b") as lock_file:
-            lock_file.seek(0)
-            if lock_file.read(1) == b"":
+        lock_path = get_data_dir() / "reminders.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if os.name == "nt":
+            import msvcrt
+
+            with lock_path.open("a+b") as lock_file:
                 lock_file.seek(0)
-                lock_file.write(b"0")
-                lock_file.flush()
-            lock_file.seek(0)
-            try:
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-                yield
-            finally:
+                if lock_file.read(1) == b"":
+                    lock_file.seek(0)
+                    lock_file.write(b"0")
+                    lock_file.flush()
                 lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        import fcntl
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    yield
+                finally:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
 
-        with lock_path.open("a+", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            with lock_path.open("a+", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        _REMINDER_THREADING_LOCK.release()
 
 
 def _load_state(week_key: str) -> DiaryState:
     path = _diary_path(week_key)
-    if path.exists():
-        raw_state = json.loads(path.read_text(encoding="utf-8"))
-        validated = _validate_state(raw_state, week_key)
-        return _migrate_state(validated)
-    return _empty_state(week_key)
+    if not path.exists():
+        # Drop any stale cache entry whose underlying file has been
+        # deleted externally so the cache cannot grow indefinitely with
+        # references to no-longer-existing weeks.
+        with _STATE_CACHE_LOCK:
+            _STATE_CACHE.pop(path, None)
+        return _empty_state(week_key)
+
+    pre_read_fingerprint = _stat_fingerprint(path)
+
+    with _STATE_CACHE_LOCK:
+        cached = _STATE_CACHE.get(path)
+        if (
+            cached is not None
+            and pre_read_fingerprint is not None
+            and cached[0] == pre_read_fingerprint
+        ):
+            _STATE_CACHE.move_to_end(path)
+            return copy.deepcopy(cached[1])
+
+    raw_state = json.loads(path.read_text(encoding="utf-8"))
+    validated = _validate_state(raw_state, week_key)
+    migrated = _migrate_state(validated)
+
+    # Re-stat after the read and only cache when the fingerprint is
+    # stable across the read. Otherwise the file could have been
+    # rewritten between our pre-read stat and the read itself, which
+    # would associate the pre-read fingerprint with content that
+    # actually came from a later revision and let a subsequent reader
+    # get a cache hit on a fingerprint that does not correspond to the
+    # cached state. Skipping the cache populate in that case is safe:
+    # the next call will re-read and try again.
+    post_read_fingerprint = _stat_fingerprint(path)
+    if (
+        pre_read_fingerprint is not None
+        and post_read_fingerprint is not None
+        and pre_read_fingerprint == post_read_fingerprint
+    ):
+        snapshot = copy.deepcopy(migrated)
+        with _STATE_CACHE_LOCK:
+            _STATE_CACHE[path] = (post_read_fingerprint, snapshot)
+            _STATE_CACHE.move_to_end(path)
+            while len(_STATE_CACHE) > _STATE_CACHE_MAX_ENTRIES:
+                _STATE_CACHE.popitem(last=False)
+    return migrated
 
 
 def _load_reminder_state() -> ReminderState:
     path = _reminders_path()
-    if path.exists():
-        raw_state = json.loads(path.read_text(encoding="utf-8"))
-        validated = _validate_reminder_state(raw_state)
-        return _migrate_reminder_state(validated)
-    return _empty_reminder_state()
+    if not path.exists():
+        with _REMINDER_STATE_CACHE_LOCK:
+            _REMINDER_STATE_CACHE.pop(path, None)
+        return _empty_reminder_state()
+
+    pre_read_fingerprint = _stat_fingerprint(path)
+
+    with _REMINDER_STATE_CACHE_LOCK:
+        cached = _REMINDER_STATE_CACHE.get(path)
+        if (
+            cached is not None
+            and pre_read_fingerprint is not None
+            and cached[0] == pre_read_fingerprint
+        ):
+            _REMINDER_STATE_CACHE.move_to_end(path)
+            return copy.deepcopy(cached[1])
+
+    raw_state = json.loads(path.read_text(encoding="utf-8"))
+    validated = _validate_reminder_state(raw_state)
+    migrated = _migrate_reminder_state(validated)
+
+    # Re-stat after the read and only cache when the fingerprint is
+    # stable across the read; see _load_state for the rationale.
+    post_read_fingerprint = _stat_fingerprint(path)
+    if (
+        pre_read_fingerprint is not None
+        and post_read_fingerprint is not None
+        and pre_read_fingerprint == post_read_fingerprint
+    ):
+        snapshot = copy.deepcopy(migrated)
+        with _REMINDER_STATE_CACHE_LOCK:
+            _REMINDER_STATE_CACHE[path] = (post_read_fingerprint, snapshot)
+            _REMINDER_STATE_CACHE.move_to_end(path)
+            while len(_REMINDER_STATE_CACHE) > _REMINDER_STATE_CACHE_MAX_ENTRIES:
+                _REMINDER_STATE_CACHE.popitem(last=False)
+    return migrated
 
 
 def _save_reminder_state(state: ReminderState, refresh_week_keys: set[str] | None = None) -> None:
     validated = _validate_reminder_state(state)
-    json_content = json.dumps(validated, indent=2, ensure_ascii=False)
-    _atomic_write_text(_reminders_path(), json_content)
+    # Cache the migrated form so cache hits return the same shape as a
+    # fresh disk load (which always passes through ``_migrate_reminder_state``).
+    # Without this, a cached read could return a structurally different state
+    # than a non-cached read of the same data.
+    migrated = _migrate_reminder_state(validated)
+    json_content = json.dumps(migrated, indent=2, ensure_ascii=False)
+    reminders_path = _reminders_path()
+    _atomic_write_text(reminders_path, json_content)
+    _cache_reminder_state(reminders_path, migrated)
 
     for week_key in refresh_week_keys or set():
         diary_path = _diary_path(week_key)
         if diary_path.exists():
             with _week_lock(week_key):
-                reminders_for_week = validated["reminders"].get(week_key, [])
+                reminders_for_week = migrated["reminders"].get(week_key, [])
                 _save_state(_load_state(week_key), reminders=reminders_for_week)
 
 
@@ -404,18 +686,23 @@ def _save_state(state: DiaryState, reminders: list[ReminderEntry]) -> None:
     from work_diary_mcp.markdown import render_diary  # avoid circular import
 
     validated = _validate_state(state)
-    week_key = validated["weekKey"]
+    # Cache the migrated form so cache hits return the same shape as a
+    # fresh disk load (which always passes through ``_migrate_state``).
+    migrated = _migrate_state(validated)
+    week_key = migrated["weekKey"]
 
-    json_content = json.dumps(validated, indent=2, ensure_ascii=False)
+    json_content = json.dumps(migrated, indent=2, ensure_ascii=False)
     markdown_content = render_diary(
         {
-            **validated,
+            **migrated,
             "reminders": reminders,
         }
     )
 
-    _atomic_write_text(_diary_path(week_key), json_content)
+    diary_path = _diary_path(week_key)
+    _atomic_write_text(diary_path, json_content)
     _atomic_write_text(_markdown_path(week_key), markdown_content)
+    _cache_state(diary_path, migrated)
 
 
 @contextmanager
@@ -527,8 +814,29 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
     When *carry_forward* is True, newly created pages inherit non-completed
     projects from the most recent prior week. When False, newly created pages
     start empty.
+
+    Uses an in-process cache keyed by ``(today, week_key)`` so repeated tool
+    calls within the same day skip the lock acquisition and existence
+    check entirely once the page is known to exist. The cache is validated
+    against the diary file on disk on each lookup so external deletions are
+    handled correctly, and entries from prior days are evicted whenever a
+    new entry is recorded so the cache cannot grow without bound across
+    long-running server sessions.
     """
     week_label = get_week_label(week_key)
+    today_iso = date.today().isoformat()
+    cache_key = (today_iso, week_key)
+
+    with _ENSURED_PAGES_LOCK:
+        cached = _ENSURED_PAGES.get(cache_key)
+        if cached is not None:
+            # Defensive re-check: if the diary file was deleted externally
+            # since we cached this entry, fall through and recreate the
+            # page rather than returning a stale "exists" result.
+            if _diary_path(week_key).exists():
+                return dict(cached)
+            _ENSURED_PAGES.pop(cache_key, None)
+
     is_new = False
 
     with _week_write(week_key) as reminders:
@@ -549,7 +857,19 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
             )
             is_new = True
 
-    return {"week_key": week_key, "week_label": week_label, "is_new": is_new}
+    result = {"week_key": week_key, "week_label": week_label, "is_new": is_new}
+    with _ENSURED_PAGES_LOCK:
+        # Evict any entries from prior days before recording today's entry
+        # so the cache stays bounded to at most one entry per active week
+        # for the current day.
+        stale_keys = [key for key in _ENSURED_PAGES if key[0] != today_iso]
+        for key in stale_keys:
+            _ENSURED_PAGES.pop(key, None)
+        # Subsequent same-day calls should report ``is_new=False`` because
+        # the page now exists on disk; cache that form rather than the
+        # first-call result.
+        _ENSURED_PAGES[cache_key] = {**result, "is_new": False}
+    return result
 
 
 def get_or_create_week_page() -> dict:

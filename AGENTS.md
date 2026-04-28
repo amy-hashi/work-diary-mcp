@@ -185,6 +185,7 @@ Maintain that organization when editing docs.
 - `WORK_DIARY_DATA_DIR`
 - `WORK_DIARY_JIRA_BASE_URL`
 - `WORK_DIARY_JIRA_PREFIXES`
+- `WORK_DIARY_FILE_LOCKS` — opt-in flag (`1`/`true`/`yes`/`on`) that additionally acquires filesystem locks for week and reminder writes. Off by default; in-process `threading.Lock`s are used in the common single-process case.
 
 ### Settings file
 Platform-native settings file location:

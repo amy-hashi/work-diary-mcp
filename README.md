@@ -131,6 +131,16 @@ export WORK_DIARY_JIRA_PREFIXES=PROJ,INFRA,ENG
 
 `WORK_DIARY_JIRA_BASE_URL` must be a non-empty URL and must include a scheme such as `https://`.
 
+#### Multi-process safety
+
+By default, `work-diary-mcp` uses in-process `threading.Lock`s to coordinate writes. This is safe for the common case where a single MCP server process is the only writer to the data directory, and avoids per-call `flock` / `msvcrt.locking` overhead.
+
+If you run multiple processes that write to the same data directory, set `WORK_DIARY_FILE_LOCKS=1` to additionally acquire filesystem locks for week and reminder writes:
+
+```bash
+export WORK_DIARY_FILE_LOCKS=1
+```
+
 ### Settings file
 
 Create a settings file with any combination of the following keys:

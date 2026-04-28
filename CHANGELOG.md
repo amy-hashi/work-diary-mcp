@@ -9,9 +9,17 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Added
 - New terminal project statuses **Shipped** and **GA**, both rendered with the 🚀 emoji and excluded from carry-forward.
 - New non-terminal project status **In Planning**, rendered with the 💡 emoji.
+- Opt-in `WORK_DIARY_FILE_LOCKS` environment variable that re-enables filesystem-based week and reminder locks for multi-process deployments. Disabled by default; in-process `threading.Lock`s are used in the common single-process case.
+
+### Changed
+- Reduced per-tool-call latency by:
+  - Dropping `os.fsync` from `_atomic_write_text`. Tempfile + rename still provides application-level atomicity; fsync was the dominant per-call cost on macOS APFS.
+  - Caching parsed `DiaryState` and `ReminderState` keyed by a `(st_mtime_ns, st_size)` fingerprint of the underlying file so repeated reads within a process avoid re-parsing and re-validating JSON. The cache invalidates automatically when either the file's mtime or its size changes, which catches both ordinary external edits and the defense-in-depth case where a tool preserves mtime (e.g. `cp -p`, `rsync --times`, restoring from backup, explicit `os.utime`) but the replacement file's size differs. Both caches are now bounded LRUs (`OrderedDict`-backed) so a long-running server that touches many historical weeks cannot grow memory without bound, and entries whose underlying file has been deleted are dropped on the next load.
+  - Memoizing `_ensure_week_page` results by `(today, week_key)` so subsequent same-day tool calls skip the lock acquisition and existence check once the page is known to exist.
+  - Replacing the unconditional `flock` / `msvcrt.locking` calls with in-process `threading.Lock`s, with the filesystem locks now opt-in via `WORK_DIARY_FILE_LOCKS`. Per-week threading locks now use a fixed-size lock-stripe array indexed by `hash(week_key)` rather than a registry that grew with every distinct week_key, so the lock registry's memory footprint is constant regardless of how many historical weeks the server touches over its lifetime.
+  - Re-introducing an `lru_cache` on the compiled Jira ticket regex, keyed on the resolved prefix tuple so configuration changes still produce a fresh pattern.
 
 ### Fixed
-- Removed `@lru_cache` from the Jira ticket regex builder so prefix configuration changes are picked up correctly instead of returning a stale regex.
 - Week-write paths now acquire `_reminder_lock` before `_week_lock` via a new `_week_write` helper, establishing a single canonical lock ordering across week-write and reminder-write code paths. This closes both a race where a concurrent reminder write could leave the persisted Markdown out of sync and an AB/BA deadlock that would have occurred if `_save_state` acquired the reminder lock from underneath the week lock. `_save_state` now requires reminders to be supplied by the caller so the dangerous fallback path cannot be reintroduced.
 - `get_or_create_page_for_week` now applies carry-forward when the supplied ISO date resolves to the current week, preventing direct callers from silently creating an empty current-week page.
 - `list_projects` now normalizes the supplied week key to that week's Monday, matching `list_reminders` and `get_diary_markdown`.
