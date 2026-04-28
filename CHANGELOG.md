@@ -14,7 +14,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Changed
 - Reduced per-tool-call latency by:
   - Dropping `os.fsync` from `_atomic_write_text`. Tempfile + rename still provides application-level atomicity; fsync was the dominant per-call cost on macOS APFS.
-  - Caching parsed `DiaryState` and `ReminderState` keyed by file mtime so repeated reads within a process avoid re-parsing and re-validating JSON. The cache invalidates automatically when the underlying file's mtime changes.
+  - Caching parsed `DiaryState` and `ReminderState` keyed by a `(st_mtime_ns, st_size)` fingerprint of the underlying file so repeated reads within a process avoid re-parsing and re-validating JSON. The cache invalidates automatically when either the file's mtime or its size changes, which catches both ordinary external edits and the defense-in-depth case where a tool preserves mtime (e.g. `cp -p`, `rsync --times`, restoring from backup, explicit `os.utime`) but the replacement file's size differs.
   - Memoizing `_ensure_week_page` results by `(today, week_key)` so subsequent same-day tool calls skip the lock acquisition and existence check once the page is known to exist.
   - Replacing the unconditional `flock` / `msvcrt.locking` calls with in-process `threading.Lock`s, with the filesystem locks now opt-in via `WORK_DIARY_FILE_LOCKS`.
   - Re-introducing an `lru_cache` on the compiled Jira ticket regex, keyed on the resolved prefix tuple so configuration changes still produce a fresh pattern.
