@@ -2459,6 +2459,45 @@ class TestEnsuredPageCache:
         assert result["week_key"] == week_key
         assert result["is_new"] is False
 
+    def test_cache_invalidated_when_diary_file_deleted_externally(self, diary_dir):
+        week_key = diary_mod.get_week_key()
+        diary_mod.get_or_create_week_page()
+
+        diary_path = diary_dir / f"{week_key}.json"
+        assert diary_path.exists()
+        # Simulate an external deletion (e.g. user wiping the data dir)
+        # without clearing the in-process cache.
+        diary_path.unlink()
+        (diary_dir / f"{week_key}.md").unlink(missing_ok=True)
+
+        result = diary_mod.get_or_create_week_page()
+        assert result["is_new"] is True
+        assert diary_path.exists()
+
+    def test_prior_day_entries_are_evicted_when_new_entry_recorded(self, diary_dir, monkeypatch):
+        from datetime import date as real_date
+
+        today = real_date(2026, 3, 4)
+        tomorrow = real_date(2026, 3, 5)
+        current = {"value": today}
+
+        class FrozenDate(real_date):
+            @classmethod
+            def today(cls):
+                return current["value"]
+
+        monkeypatch.setattr(diary_mod, "date", FrozenDate)
+
+        # Day 1: populate cache for the current week.
+        diary_mod.get_or_create_week_page()
+        assert any(key[0] == today.isoformat() for key in diary_mod._ENSURED_PAGES)
+
+        # Day 2: a new ensure call should evict yesterday's entry.
+        current["value"] = tomorrow
+        diary_mod.get_or_create_week_page()
+
+        assert all(key[0] == tomorrow.isoformat() for key in diary_mod._ENSURED_PAGES)
+
 
 class TestFileLockToggle:
     def test_file_locks_disabled_by_default(self, diary_dir, monkeypatch):

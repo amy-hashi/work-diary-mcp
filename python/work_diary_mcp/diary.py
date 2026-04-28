@@ -672,14 +672,24 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
 
     Uses an in-process cache keyed by ``(today, week_key)`` so repeated tool
     calls within the same day skip the lock acquisition and existence
-    check entirely once the page is known to exist.
+    check entirely once the page is known to exist. The cache is validated
+    against the diary file on disk on each lookup so external deletions are
+    handled correctly, and entries from prior days are evicted whenever a
+    new entry is recorded so the cache cannot grow without bound across
+    long-running server sessions.
     """
     week_label = get_week_label(week_key)
-    cache_key = (date.today().isoformat(), week_key)
+    today_iso = date.today().isoformat()
+    cache_key = (today_iso, week_key)
 
     cached = _ENSURED_PAGES.get(cache_key)
     if cached is not None:
-        return dict(cached)
+        # Defensive re-check: if the diary file was deleted externally since
+        # we cached this entry, fall through and recreate the page rather
+        # than returning a stale "exists" result.
+        if _diary_path(week_key).exists():
+            return dict(cached)
+        _ENSURED_PAGES.pop(cache_key, None)
 
     is_new = False
 
@@ -702,6 +712,12 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
             is_new = True
 
     result = {"week_key": week_key, "week_label": week_label, "is_new": is_new}
+    # Evict any entries from prior days before recording today's entry so the
+    # cache stays bounded to at most one entry per active week for the
+    # current day.
+    stale_keys = [key for key in _ENSURED_PAGES if key[0] != today_iso]
+    for key in stale_keys:
+        _ENSURED_PAGES.pop(key, None)
     # Subsequent same-day calls should report ``is_new=False`` because the
     # page now exists on disk; cache that form rather than the first-call
     # result.
