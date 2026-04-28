@@ -291,6 +291,11 @@ _WEEK_THREADING_LOCKS: dict[str, threading.Lock] = {}
 _WEEK_THREADING_LOCKS_GUARD = threading.Lock()
 _REMINDER_THREADING_LOCK = threading.Lock()
 
+# Guards all reads, writes, and eviction sweeps over ``_ENSURED_PAGES``.
+# A dedicated lock keeps the short-circuit safe under concurrent tool
+# calls without blocking on any per-week or reminder lock.
+_ENSURED_PAGES_LOCK = threading.Lock()
+
 # Parsed-state caches keyed by file path. The cached value is a tuple of
 # ``(mtime_ns, deep-copied state)``. Entries are returned as deep copies
 # so callers can freely mutate the returned dict without corrupting the
@@ -335,7 +340,8 @@ def _reset_caches() -> None:
     """
     _STATE_CACHE.clear()
     _REMINDER_STATE_CACHE.clear()
-    _ENSURED_PAGES.clear()
+    with _ENSURED_PAGES_LOCK:
+        _ENSURED_PAGES.clear()
     with _WEEK_THREADING_LOCKS_GUARD:
         _WEEK_THREADING_LOCKS.clear()
 
@@ -520,16 +526,21 @@ def _load_reminder_state() -> ReminderState:
 
 def _save_reminder_state(state: ReminderState, refresh_week_keys: set[str] | None = None) -> None:
     validated = _validate_reminder_state(state)
-    json_content = json.dumps(validated, indent=2, ensure_ascii=False)
+    # Cache the migrated form so cache hits return the same shape as a
+    # fresh disk load (which always passes through ``_migrate_reminder_state``).
+    # Without this, a cached read could return a structurally different state
+    # than a non-cached read of the same data.
+    migrated = _migrate_reminder_state(validated)
+    json_content = json.dumps(migrated, indent=2, ensure_ascii=False)
     reminders_path = _reminders_path()
     _atomic_write_text(reminders_path, json_content)
-    _cache_reminder_state(reminders_path, validated)
+    _cache_reminder_state(reminders_path, migrated)
 
     for week_key in refresh_week_keys or set():
         diary_path = _diary_path(week_key)
         if diary_path.exists():
             with _week_lock(week_key):
-                reminders_for_week = validated["reminders"].get(week_key, [])
+                reminders_for_week = migrated["reminders"].get(week_key, [])
                 _save_state(_load_state(week_key), reminders=reminders_for_week)
 
 
@@ -544,12 +555,15 @@ def _save_state(state: DiaryState, reminders: list[ReminderEntry]) -> None:
     from work_diary_mcp.markdown import render_diary  # avoid circular import
 
     validated = _validate_state(state)
-    week_key = validated["weekKey"]
+    # Cache the migrated form so cache hits return the same shape as a
+    # fresh disk load (which always passes through ``_migrate_state``).
+    migrated = _migrate_state(validated)
+    week_key = migrated["weekKey"]
 
-    json_content = json.dumps(validated, indent=2, ensure_ascii=False)
+    json_content = json.dumps(migrated, indent=2, ensure_ascii=False)
     markdown_content = render_diary(
         {
-            **validated,
+            **migrated,
             "reminders": reminders,
         }
     )
@@ -557,7 +571,7 @@ def _save_state(state: DiaryState, reminders: list[ReminderEntry]) -> None:
     diary_path = _diary_path(week_key)
     _atomic_write_text(diary_path, json_content)
     _atomic_write_text(_markdown_path(week_key), markdown_content)
-    _cache_state(diary_path, validated)
+    _cache_state(diary_path, migrated)
 
 
 @contextmanager
@@ -682,14 +696,15 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
     today_iso = date.today().isoformat()
     cache_key = (today_iso, week_key)
 
-    cached = _ENSURED_PAGES.get(cache_key)
-    if cached is not None:
-        # Defensive re-check: if the diary file was deleted externally since
-        # we cached this entry, fall through and recreate the page rather
-        # than returning a stale "exists" result.
-        if _diary_path(week_key).exists():
-            return dict(cached)
-        _ENSURED_PAGES.pop(cache_key, None)
+    with _ENSURED_PAGES_LOCK:
+        cached = _ENSURED_PAGES.get(cache_key)
+        if cached is not None:
+            # Defensive re-check: if the diary file was deleted externally
+            # since we cached this entry, fall through and recreate the
+            # page rather than returning a stale "exists" result.
+            if _diary_path(week_key).exists():
+                return dict(cached)
+            _ENSURED_PAGES.pop(cache_key, None)
 
     is_new = False
 
@@ -712,16 +727,17 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
             is_new = True
 
     result = {"week_key": week_key, "week_label": week_label, "is_new": is_new}
-    # Evict any entries from prior days before recording today's entry so the
-    # cache stays bounded to at most one entry per active week for the
-    # current day.
-    stale_keys = [key for key in _ENSURED_PAGES if key[0] != today_iso]
-    for key in stale_keys:
-        _ENSURED_PAGES.pop(key, None)
-    # Subsequent same-day calls should report ``is_new=False`` because the
-    # page now exists on disk; cache that form rather than the first-call
-    # result.
-    _ENSURED_PAGES[cache_key] = {**result, "is_new": False}
+    with _ENSURED_PAGES_LOCK:
+        # Evict any entries from prior days before recording today's entry
+        # so the cache stays bounded to at most one entry per active week
+        # for the current day.
+        stale_keys = [key for key in _ENSURED_PAGES if key[0] != today_iso]
+        for key in stale_keys:
+            _ENSURED_PAGES.pop(key, None)
+        # Subsequent same-day calls should report ``is_new=False`` because
+        # the page now exists on disk; cache that form rather than the
+        # first-call result.
+        _ENSURED_PAGES[cache_key] = {**result, "is_new": False}
     return result
 
 
