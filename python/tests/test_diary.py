@@ -2571,6 +2571,96 @@ class TestReminderCacheMatchesMigratedShape:
         assert cached_state == disk_state
 
 
+class TestStateCacheBounds:
+    def test_state_cache_evicts_least_recently_used_entry_when_full(self, diary_dir, monkeypatch):
+        monkeypatch.setattr(diary_mod, "_STATE_CACHE_MAX_ENTRIES", 3)
+
+        week_keys = [
+            "2026-01-05",
+            "2026-01-12",
+            "2026-01-19",
+            "2026-01-26",
+        ]
+        for week_key in week_keys:
+            diary_mod.get_or_create_page_for_week(week_key)
+            diary_mod.add_note(week_key, f"note for {week_key}")
+
+        # Cache is bounded to 3 entries; the first week_key inserted should
+        # have been evicted as the least-recently-used.
+        assert len(diary_mod._STATE_CACHE) == 3
+        evicted_path = diary_dir / f"{week_keys[0]}.json"
+        assert evicted_path not in diary_mod._STATE_CACHE
+        for week_key in week_keys[1:]:
+            assert (diary_dir / f"{week_key}.json") in diary_mod._STATE_CACHE
+
+    def test_state_cache_promotes_recently_read_entry(self, diary_dir, monkeypatch):
+        monkeypatch.setattr(diary_mod, "_STATE_CACHE_MAX_ENTRIES", 3)
+
+        week_keys = ["2026-01-05", "2026-01-12", "2026-01-19"]
+        for week_key in week_keys:
+            diary_mod.get_or_create_page_for_week(week_key)
+            diary_mod.add_note(week_key, f"note for {week_key}")
+
+        # Touch the oldest entry so it becomes the most-recently-used.
+        diary_mod._load_state(week_keys[0])
+
+        # Insert a new entry — the LRU should now be week_keys[1], not [0].
+        new_week = "2026-01-26"
+        diary_mod.get_or_create_page_for_week(new_week)
+        diary_mod.add_note(new_week, "fresh")
+
+        assert (diary_dir / f"{week_keys[1]}.json") not in diary_mod._STATE_CACHE
+        assert (diary_dir / f"{week_keys[0]}.json") in diary_mod._STATE_CACHE
+        assert (diary_dir / f"{new_week}.json") in diary_mod._STATE_CACHE
+
+    def test_state_cache_entry_dropped_when_underlying_file_disappears(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "seed")
+        path = diary_dir / f"{week_key}.json"
+        assert path in diary_mod._STATE_CACHE
+
+        path.unlink()
+        # A load against a missing file should drop the stale cache entry
+        # rather than retaining a reference to a no-longer-existing week.
+        diary_mod._load_state(week_key)
+        assert path not in diary_mod._STATE_CACHE
+
+    def test_reminder_cache_bounded_by_max_entries(self, diary_dir, monkeypatch):
+        monkeypatch.setattr(diary_mod, "_REMINDER_STATE_CACHE_MAX_ENTRIES", 1)
+
+        # Seed the reminder cache by writing a reminder.
+        diary_mod.add_reminder("2026-03-02", "first")
+        real_reminders_path = diary_mod._reminders_path()
+        assert real_reminders_path in diary_mod._REMINDER_STATE_CACHE
+
+        # Force a second distinct cache entry by caching against a
+        # different path. This exercises the bound without relying on
+        # multiple physical reminder files (which the app never creates
+        # in normal operation).
+        alt_path = diary_dir / "alt-reminders.json"
+        alt_path.write_text("{}", encoding="utf-8")
+        diary_mod._cache_reminder_state(alt_path, diary_mod._empty_reminder_state())
+
+        assert len(diary_mod._REMINDER_STATE_CACHE) == 1
+
+
+class TestWeekLockStriping:
+    def test_same_week_key_returns_same_lock_object(self, diary_dir):
+        lock_a = diary_mod._get_week_threading_lock("2026-03-02")
+        lock_b = diary_mod._get_week_threading_lock("2026-03-02")
+        assert lock_a is lock_b
+
+    def test_lock_registry_size_is_constant(self, diary_dir):
+        # Touching many distinct week keys must not grow the lock registry.
+        size_before = len(diary_mod._WEEK_THREADING_LOCKS)
+        for offset in range(500):
+            iso = (date(2020, 1, 6) + timedelta(weeks=offset)).isoformat()
+            diary_mod._get_week_threading_lock(iso)
+        size_after = len(diary_mod._WEEK_THREADING_LOCKS)
+        assert size_before == size_after == diary_mod._WEEK_LOCK_STRIPES
+
+
 class TestStateCacheFingerprint:
     def test_state_cache_invalidates_when_size_changes_with_preserved_mtime(self, diary_dir):
         """An external edit that preserves mtime but changes file size
