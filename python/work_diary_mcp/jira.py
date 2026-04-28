@@ -16,10 +16,16 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 def _bare_ticket_re() -> re.Pattern[str]:
     """Build the Jira ticket regex from the configured prefixes.
 
-    Cached on the resolved prefix tuple so repeated linkification calls
-    avoid recompiling the same pattern. Reconfiguring the prefixes (e.g.
-    in tests via ``get_jira_prefixes.cache_clear()``) yields a different
-    tuple and therefore a fresh compiled pattern automatically.
+    The compiled pattern is cached by the value of the resolved prefix
+    tuple (``lru_cache`` keys on ``__hash__``/``__eq__``), so repeated
+    linkification calls with the same prefixes reuse the same compiled
+    regex without recompiling. Reconfiguring the prefixes to a different
+    value — for example by setting ``WORK_DIARY_JIRA_PREFIXES`` and
+    clearing ``get_jira_prefixes``'s own cache in tests — produces a
+    tuple that is unequal to the previously cached key and therefore
+    misses the cache and compiles a fresh pattern. Clearing
+    ``get_jira_prefixes`` and recomputing the same prefixes still hits
+    the cached regex, which is the desired behavior.
     """
     return _compile_bare_ticket_re(get_jira_prefixes())
 

@@ -2498,6 +2498,68 @@ class TestEnsuredPageCache:
 
         assert all(key[0] == tomorrow.isoformat() for key in diary_mod._ENSURED_PAGES)
 
+    def test_concurrent_ensure_calls_do_not_corrupt_cache(self, diary_dir):
+        """Many threads calling _ensure_week_page concurrently must not raise
+        ``RuntimeError: dictionary changed size during iteration`` or leave
+        the cache in an inconsistent state."""
+        import threading
+
+        week_key = diary_mod.get_week_key()
+        diary_mod.get_or_create_week_page()
+
+        errors: list[BaseException] = []
+        barrier = threading.Barrier(16)
+
+        def worker():
+            try:
+                barrier.wait()
+                for _ in range(50):
+                    diary_mod.get_or_create_week_page()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        # Exactly one entry for today's current week should remain.
+        today_iso = date.today().isoformat()
+        assert (today_iso, week_key) in diary_mod._ENSURED_PAGES
+
+
+class TestReminderCacheMatchesMigratedShape:
+    def test_cached_reminder_state_matches_disk_load(self, diary_dir):
+        """A cached reminder read must return the same shape as a fresh
+        disk load (which always passes through _migrate_reminder_state)."""
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "remember the milk")
+
+        cached_state = diary_mod._load_reminder_state()
+
+        # Force a re-read from disk by clearing the in-process cache.
+        diary_mod._REMINDER_STATE_CACHE.clear()
+        disk_state = diary_mod._load_reminder_state()
+
+        assert cached_state == disk_state
+
+    def test_cached_diary_state_matches_disk_load(self, diary_dir):
+        """A cached diary read must match the migrated shape returned by
+        a fresh disk load."""
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "see PROJ-1234 for context")
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", note="touches INFRA-5678")
+
+        cached_state = diary_mod._load_state(week_key)
+
+        diary_mod._STATE_CACHE.clear()
+        disk_state = diary_mod._load_state(week_key)
+
+        assert cached_state == disk_state
+
 
 class TestFileLockToggle:
     def test_file_locks_disabled_by_default(self, diary_dir, monkeypatch):
