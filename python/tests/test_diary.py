@@ -35,7 +35,9 @@ def diary_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     config_mod.get_data_dir.cache_clear()
     monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(tmp_path))
+    diary_mod._reset_caches()
     yield tmp_path
+    diary_mod._reset_caches()
     config_mod.get_data_dir.cache_clear()
 
 
@@ -369,9 +371,13 @@ class TestAtomicWriteText:
 
 
 class TestWeekLock:
-    def test_windows_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir):
+    def test_windows_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir, monkeypatch):
         if os.name != "nt":
             pytest.skip("Windows-specific lock file behavior")
+
+        # File-based locks are opt-in; this regression test exercises the
+        # filesystem lock path explicitly.
+        monkeypatch.setenv("WORK_DIARY_FILE_LOCKS", "1")
 
         week_key = "2026-03-02"
         lock_path = diary_dir / f"{week_key}.lock"
@@ -387,9 +393,13 @@ class TestWeekLock:
 
 
 class TestReminderLock:
-    def test_windows_reminder_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir):
+    def test_windows_reminder_lock_file_does_not_grow_on_repeated_acquire(
+        self, diary_dir, monkeypatch
+    ):
         if os.name != "nt":
             pytest.skip("Windows-specific reminder lock behavior")
+
+        monkeypatch.setenv("WORK_DIARY_FILE_LOCKS", "1")
 
         lock_path = diary_dir / "reminders.lock"
 
@@ -2352,3 +2362,138 @@ class TestJiraLinkificationIntegration:
             "[PROJ-34398](https://jira.example.com/browse/PROJ-34398)"
             in state["notes"][0]["content"]
         )
+
+
+# ---------------------------------------------------------------------------
+# Performance-oriented caching and lock behavior
+# ---------------------------------------------------------------------------
+
+
+class TestStateCaching:
+    def test_load_state_returns_cached_copy_when_mtime_unchanged(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "first note")
+
+        path = diary_dir / f"{week_key}.json"
+        assert path in diary_mod._STATE_CACHE
+
+        # Corrupt the on-disk file but leave its mtime untouched. A cached
+        # read should not touch disk and should still return the prior state.
+        original_mtime_ns = path.stat().st_mtime_ns
+        path.write_text("not valid json", encoding="utf-8")
+        os.utime(path, ns=(original_mtime_ns, original_mtime_ns))
+
+        state = diary_mod._load_state(week_key)
+        assert state["notes"][0]["content"] == "first note"
+
+    def test_load_state_returns_independent_copies(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "shared note")
+
+        first = diary_mod._load_state(week_key)
+        first["notes"].append({"content": "scribbled in caller"})
+
+        second = diary_mod._load_state(week_key)
+        assert len(second["notes"]) == 1
+        assert second["notes"][0]["content"] == "shared note"
+
+    def test_external_mtime_change_invalidates_cache(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "original")
+
+        path = diary_dir / f"{week_key}.json"
+        replacement = {
+            "weekKey": week_key,
+            "projects": {},
+            "projectNotes": {},
+            "notes": [{"content": "rewritten externally"}],
+        }
+        path.write_text(json.dumps(replacement), encoding="utf-8")
+        # Bump mtime to simulate a real external write.
+        new_mtime_ns = path.stat().st_mtime_ns + 1_000_000_000
+        os.utime(path, ns=(new_mtime_ns, new_mtime_ns))
+
+        state = diary_mod._load_state(week_key)
+        assert state["notes"][0]["content"] == "rewritten externally"
+
+
+class TestReminderStateCaching:
+    def test_load_reminder_state_uses_cache_when_mtime_unchanged(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "remember the milk")
+
+        path = diary_dir / "reminders.json"
+        assert path in diary_mod._REMINDER_STATE_CACHE
+
+        original_mtime_ns = path.stat().st_mtime_ns
+        path.write_text("garbage", encoding="utf-8")
+        os.utime(path, ns=(original_mtime_ns, original_mtime_ns))
+
+        state = diary_mod._load_reminder_state()
+        assert state["reminders"][week_key][0]["content"] == "remember the milk"
+
+
+class TestEnsuredPageCache:
+    def test_existing_page_short_circuits_lock_acquisition(self, diary_dir, monkeypatch):
+        from contextlib import contextmanager
+
+        week_key = diary_mod.get_week_key()
+        diary_mod.get_or_create_week_page()
+
+        call_count = {"n": 0}
+        real_week_lock = diary_mod._week_lock
+
+        @contextmanager
+        def counting_week_lock(wk):
+            call_count["n"] += 1
+            with real_week_lock(wk):
+                yield
+
+        monkeypatch.setattr(diary_mod, "_week_lock", counting_week_lock)
+
+        result = diary_mod.get_or_create_week_page()
+        assert call_count["n"] == 0
+        assert result["week_key"] == week_key
+        assert result["is_new"] is False
+
+
+class TestFileLockToggle:
+    def test_file_locks_disabled_by_default(self, diary_dir, monkeypatch):
+        monkeypatch.delenv("WORK_DIARY_FILE_LOCKS", raising=False)
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "no file locks needed")
+
+        assert not (diary_dir / f"{week_key}.lock").exists()
+        assert not (diary_dir / "reminders.lock").exists()
+
+    def test_file_locks_created_when_enabled(self, diary_dir, monkeypatch):
+        if os.name == "nt":
+            pytest.skip("POSIX-only filesystem lock path")
+
+        monkeypatch.setenv("WORK_DIARY_FILE_LOCKS", "1")
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "file locks engaged")
+        diary_mod.add_reminder(week_key, "and reminders too")
+
+        assert (diary_dir / f"{week_key}.lock").exists()
+        assert (diary_dir / "reminders.lock").exists()
+
+
+class TestAtomicWriteNoFsync:
+    def test_atomic_write_does_not_call_fsync(self, diary_dir, monkeypatch):
+        called = {"fsync": 0}
+        original_fsync = os.fsync
+
+        def tracking_fsync(fd):
+            called["fsync"] += 1
+            return original_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", tracking_fsync)
+
+        diary_mod._atomic_write_text(diary_dir / "sample.txt", "contents")
+        assert called["fsync"] == 0

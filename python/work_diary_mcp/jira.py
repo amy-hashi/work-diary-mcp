@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from work_diary_mcp.config import get_jira_base_url, get_jira_prefixes
 
@@ -13,8 +14,18 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 
 
 def _bare_ticket_re() -> re.Pattern[str]:
-    """Build the Jira ticket regex from the configured prefixes."""
-    prefixes = get_jira_prefixes()
+    """Build the Jira ticket regex from the configured prefixes.
+
+    Cached on the resolved prefix tuple so repeated linkification calls
+    avoid recompiling the same pattern. Reconfiguring the prefixes (e.g.
+    in tests via ``get_jira_prefixes.cache_clear()``) yields a different
+    tuple and therefore a fresh compiled pattern automatically.
+    """
+    return _compile_bare_ticket_re(get_jira_prefixes())
+
+
+@lru_cache(maxsize=8)
+def _compile_bare_ticket_re(prefixes: tuple[str, ...]) -> re.Pattern[str]:
     prefix_alternation = "|".join(re.escape(p) for p in prefixes)
     return re.compile(
         rf"\b({prefix_alternation})-(\d{{3,}})\b",

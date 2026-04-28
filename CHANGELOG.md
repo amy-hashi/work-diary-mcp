@@ -9,6 +9,15 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Added
 - New terminal project statuses **Shipped** and **GA**, both rendered with the 🚀 emoji and excluded from carry-forward.
 - New non-terminal project status **In Planning**, rendered with the 💡 emoji.
+- Opt-in `WORK_DIARY_FILE_LOCKS` environment variable that re-enables filesystem-based week and reminder locks for multi-process deployments. Disabled by default; in-process `threading.Lock`s are used in the common single-process case.
+
+### Changed
+- Reduced per-tool-call latency by:
+  - Dropping `os.fsync` from `_atomic_write_text`. Tempfile + rename still provides application-level atomicity; fsync was the dominant per-call cost on macOS APFS.
+  - Caching parsed `DiaryState` and `ReminderState` keyed by file mtime so repeated reads within a process avoid re-parsing and re-validating JSON. The cache invalidates automatically when the underlying file's mtime changes.
+  - Memoizing `_ensure_week_page` results by `(today, week_key)` so subsequent same-day tool calls skip the lock acquisition and existence check once the page is known to exist.
+  - Replacing the unconditional `flock` / `msvcrt.locking` calls with in-process `threading.Lock`s, with the filesystem locks now opt-in via `WORK_DIARY_FILE_LOCKS`.
+  - Re-introducing an `lru_cache` on the compiled Jira ticket regex, keyed on the resolved prefix tuple so configuration changes still produce a fresh pattern.
 
 ### Fixed
 - Removed `@lru_cache` from the Jira ticket regex builder so prefix configuration changes are picked up correctly instead of returning a stale regex.
