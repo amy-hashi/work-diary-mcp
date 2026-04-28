@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
@@ -283,12 +284,23 @@ def _migrate_reminder_state(state: ReminderState) -> ReminderState:
 # In-process caches and locks
 # --------------------------------------------------------------------------- #
 
-# Per-week threading locks, lazily created. Always acquired by week-write
-# paths. Filesystem locks are additionally acquired only when
-# WORK_DIARY_FILE_LOCKS is enabled (see ``_file_locks_enabled``); they are
-# needed only when multiple processes may write to the same data directory.
-_WEEK_THREADING_LOCKS: dict[str, threading.Lock] = {}
-_WEEK_THREADING_LOCKS_GUARD = threading.Lock()
+# Per-week threading locks use a fixed-size stripe array rather than a
+# growing dict keyed by week_key. This bounds memory to a constant
+# regardless of how many distinct historical weeks the server touches
+# over its lifetime, and avoids the correctness pitfall of evicting a
+# lock that another thread might still be holding (which would silently
+# break mutual exclusion when a fresh lock instance is created for the
+# same week_key).
+#
+# Two threads acting on the same week_key always map to the same stripe
+# (mutual exclusion preserved). Two threads acting on different week_keys
+# that hash to the same stripe will occasionally contend with each other,
+# but this server's per-call work is sub-millisecond and concurrent tool
+# invocations are rare, so the false-sharing cost is negligible.
+_WEEK_LOCK_STRIPES: int = 64
+_WEEK_THREADING_LOCKS: tuple[threading.Lock, ...] = tuple(
+    threading.Lock() for _ in range(_WEEK_LOCK_STRIPES)
+)
 _REMINDER_THREADING_LOCK = threading.Lock()
 
 # Guards all reads, writes, and eviction sweeps over ``_ENSURED_PAGES``.
@@ -305,9 +317,23 @@ _ENSURED_PAGES_LOCK = threading.Lock()
 # defense-in-depth case where a tool preserves or restores mtime
 # (``cp -p``, ``rsync --times``, restoring from backup, ``os.utime``,
 # etc.) but the replacement file's size differs.
+#
+# Each cache is an ``OrderedDict`` used as an LRU: on every access (read
+# hit or write) the entry is moved to the most-recently-used end, and
+# inserts beyond the configured maximum evict the least-recently-used
+# entry. This bounds memory usage on long-running servers that touch
+# many historical weeks. Reminder state has only ever one entry in
+# practice (a single ``reminders.json``) but uses the same machinery for
+# symmetry. All access is serialized by ``_STATE_CACHE_LOCK`` /
+# ``_REMINDER_STATE_CACHE_LOCK`` so the LRU ordering and eviction stay
+# consistent under concurrent tool calls.
+_STATE_CACHE_MAX_ENTRIES: int = 32
+_REMINDER_STATE_CACHE_MAX_ENTRIES: int = 4
 _StateFingerprint = tuple[int, int]
-_STATE_CACHE: dict[Path, tuple[_StateFingerprint, DiaryState]] = {}
-_REMINDER_STATE_CACHE: dict[Path, tuple[_StateFingerprint, ReminderState]] = {}
+_STATE_CACHE: "OrderedDict[Path, tuple[_StateFingerprint, DiaryState]]" = OrderedDict()
+_REMINDER_STATE_CACHE: "OrderedDict[Path, tuple[_StateFingerprint, ReminderState]]" = OrderedDict()
+_STATE_CACHE_LOCK = threading.Lock()
+_REMINDER_STATE_CACHE_LOCK = threading.Lock()
 
 
 def _stat_fingerprint(path: Path) -> _StateFingerprint | None:
@@ -339,42 +365,70 @@ def _file_locks_enabled() -> bool:
 
 
 def _get_week_threading_lock(week_key: str) -> threading.Lock:
-    """Return the per-week in-process lock, creating it on first use."""
-    with _WEEK_THREADING_LOCKS_GUARD:
-        lock = _WEEK_THREADING_LOCKS.get(week_key)
-        if lock is None:
-            lock = threading.Lock()
-            _WEEK_THREADING_LOCKS[week_key] = lock
-        return lock
+    """Return the per-week in-process lock for *week_key*.
+
+    Uses a fixed-size lock-stripe array indexed by ``hash(week_key)`` so
+    the lock registry never grows. Two calls with the same ``week_key``
+    always return the same lock object, preserving mutual exclusion.
+    Different ``week_key`` values may occasionally collide on the same
+    stripe; given sub-millisecond per-call work and effectively no
+    concurrent tool invocations on this server, the resulting false
+    sharing is negligible.
+    """
+    return _WEEK_THREADING_LOCKS[hash(week_key) % _WEEK_LOCK_STRIPES]
 
 
 def _reset_caches() -> None:
-    """Clear all in-process caches and lock registries.
+    """Clear all in-process caches.
+
+    Stripe locks are not reset — they are stateless when not held, and
+    re-creating them mid-test could break mutual exclusion if any code
+    were holding a reference to the old instance.
 
     Intended for tests that swap data directories between cases.
     """
-    _STATE_CACHE.clear()
-    _REMINDER_STATE_CACHE.clear()
+    with _STATE_CACHE_LOCK:
+        _STATE_CACHE.clear()
+    with _REMINDER_STATE_CACHE_LOCK:
+        _REMINDER_STATE_CACHE.clear()
     with _ENSURED_PAGES_LOCK:
         _ENSURED_PAGES.clear()
-    with _WEEK_THREADING_LOCKS_GUARD:
-        _WEEK_THREADING_LOCKS.clear()
 
 
 def _cache_state(path: Path, state: DiaryState) -> None:
-    """Refresh the parsed-state cache after a successful save."""
+    """Refresh the parsed-state cache after a successful save.
+
+    Marks the entry as most-recently-used and evicts the
+    least-recently-used entry if the cache would exceed
+    ``_STATE_CACHE_MAX_ENTRIES``.
+    """
     fingerprint = _stat_fingerprint(path)
     if fingerprint is None:
         return
-    _STATE_CACHE[path] = (fingerprint, copy.deepcopy(state))
+    snapshot = copy.deepcopy(state)
+    with _STATE_CACHE_LOCK:
+        _STATE_CACHE[path] = (fingerprint, snapshot)
+        _STATE_CACHE.move_to_end(path)
+        while len(_STATE_CACHE) > _STATE_CACHE_MAX_ENTRIES:
+            _STATE_CACHE.popitem(last=False)
 
 
 def _cache_reminder_state(path: Path, state: ReminderState) -> None:
-    """Refresh the parsed reminder-state cache after a successful save."""
+    """Refresh the parsed reminder-state cache after a successful save.
+
+    Marks the entry as most-recently-used and evicts the
+    least-recently-used entry if the cache would exceed
+    ``_REMINDER_STATE_CACHE_MAX_ENTRIES``.
+    """
     fingerprint = _stat_fingerprint(path)
     if fingerprint is None:
         return
-    _REMINDER_STATE_CACHE[path] = (fingerprint, copy.deepcopy(state))
+    snapshot = copy.deepcopy(state)
+    with _REMINDER_STATE_CACHE_LOCK:
+        _REMINDER_STATE_CACHE[path] = (fingerprint, snapshot)
+        _REMINDER_STATE_CACHE.move_to_end(path)
+        while len(_REMINDER_STATE_CACHE) > _REMINDER_STATE_CACHE_MAX_ENTRIES:
+            _REMINDER_STATE_CACHE.popitem(last=False)
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -496,38 +550,59 @@ def _reminder_lock():
 def _load_state(week_key: str) -> DiaryState:
     path = _diary_path(week_key)
     if not path.exists():
+        # Drop any stale cache entry whose underlying file has been
+        # deleted externally so the cache cannot grow indefinitely with
+        # references to no-longer-existing weeks.
+        with _STATE_CACHE_LOCK:
+            _STATE_CACHE.pop(path, None)
         return _empty_state(week_key)
 
     fingerprint = _stat_fingerprint(path)
 
-    cached = _STATE_CACHE.get(path)
-    if cached is not None and fingerprint is not None and cached[0] == fingerprint:
-        return copy.deepcopy(cached[1])
+    with _STATE_CACHE_LOCK:
+        cached = _STATE_CACHE.get(path)
+        if cached is not None and fingerprint is not None and cached[0] == fingerprint:
+            _STATE_CACHE.move_to_end(path)
+            return copy.deepcopy(cached[1])
 
     raw_state = json.loads(path.read_text(encoding="utf-8"))
     validated = _validate_state(raw_state, week_key)
     migrated = _migrate_state(validated)
     if fingerprint is not None:
-        _STATE_CACHE[path] = (fingerprint, copy.deepcopy(migrated))
+        snapshot = copy.deepcopy(migrated)
+        with _STATE_CACHE_LOCK:
+            _STATE_CACHE[path] = (fingerprint, snapshot)
+            _STATE_CACHE.move_to_end(path)
+            while len(_STATE_CACHE) > _STATE_CACHE_MAX_ENTRIES:
+                _STATE_CACHE.popitem(last=False)
     return migrated
 
 
 def _load_reminder_state() -> ReminderState:
     path = _reminders_path()
     if not path.exists():
+        with _REMINDER_STATE_CACHE_LOCK:
+            _REMINDER_STATE_CACHE.pop(path, None)
         return _empty_reminder_state()
 
     fingerprint = _stat_fingerprint(path)
 
-    cached = _REMINDER_STATE_CACHE.get(path)
-    if cached is not None and fingerprint is not None and cached[0] == fingerprint:
-        return copy.deepcopy(cached[1])
+    with _REMINDER_STATE_CACHE_LOCK:
+        cached = _REMINDER_STATE_CACHE.get(path)
+        if cached is not None and fingerprint is not None and cached[0] == fingerprint:
+            _REMINDER_STATE_CACHE.move_to_end(path)
+            return copy.deepcopy(cached[1])
 
     raw_state = json.loads(path.read_text(encoding="utf-8"))
     validated = _validate_reminder_state(raw_state)
     migrated = _migrate_reminder_state(validated)
     if fingerprint is not None:
-        _REMINDER_STATE_CACHE[path] = (fingerprint, copy.deepcopy(migrated))
+        snapshot = copy.deepcopy(migrated)
+        with _REMINDER_STATE_CACHE_LOCK:
+            _REMINDER_STATE_CACHE[path] = (fingerprint, snapshot)
+            _REMINDER_STATE_CACHE.move_to_end(path)
+            while len(_REMINDER_STATE_CACHE) > _REMINDER_STATE_CACHE_MAX_ENTRIES:
+                _REMINDER_STATE_CACHE.popitem(last=False)
     return migrated
 
 
