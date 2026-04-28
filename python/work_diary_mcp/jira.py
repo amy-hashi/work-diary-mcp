@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from work_diary_mcp.config import get_jira_base_url, get_jira_prefixes
 
@@ -13,8 +14,24 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 
 
 def _bare_ticket_re() -> re.Pattern[str]:
-    """Build the Jira ticket regex from the configured prefixes."""
-    prefixes = get_jira_prefixes()
+    """Build the Jira ticket regex from the configured prefixes.
+
+    The compiled pattern is cached by the value of the resolved prefix
+    tuple (``lru_cache`` keys on ``__hash__``/``__eq__``), so repeated
+    linkification calls with the same prefixes reuse the same compiled
+    regex without recompiling. Reconfiguring the prefixes to a different
+    value — for example by setting ``WORK_DIARY_JIRA_PREFIXES`` and
+    clearing ``get_jira_prefixes``'s own cache in tests — produces a
+    tuple that is unequal to the previously cached key and therefore
+    misses the cache and compiles a fresh pattern. Clearing
+    ``get_jira_prefixes`` and recomputing the same prefixes still hits
+    the cached regex, which is the desired behavior.
+    """
+    return _compile_bare_ticket_re(get_jira_prefixes())
+
+
+@lru_cache(maxsize=8)
+def _compile_bare_ticket_re(prefixes: tuple[str, ...]) -> re.Pattern[str]:
     prefix_alternation = "|".join(re.escape(p) for p in prefixes)
     return re.compile(
         rf"\b({prefix_alternation})-(\d{{3,}})\b",
