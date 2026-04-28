@@ -1,6 +1,6 @@
 [project]
 name = "work-diary-mcp"
-version = "1.0.0"
+version = "0.3.0"
 description = "MCP server for managing a weekly work diary"
 requires-python = ">=3.11"
 dependencies = [
