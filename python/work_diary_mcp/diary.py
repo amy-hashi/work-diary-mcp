@@ -401,6 +401,16 @@ def _cache_state(path: Path, state: DiaryState) -> None:
     Marks the entry as most-recently-used and evicts the
     least-recently-used entry if the cache would exceed
     ``_STATE_CACHE_MAX_ENTRIES``.
+
+    Note: this fingerprints *path* after the rename has already landed.
+    Under the documented single-writer assumption (the default; see
+    ``WORK_DIARY_FILE_LOCKS`` for multi-writer deployments) the file on
+    disk corresponds exactly to *state*. If a concurrent external writer
+    were to replace the file between the rename and this stat call, the
+    cached fingerprint could end up associated with their content rather
+    than ours; defending against that fully would require holding a
+    file lock around the entire write+stat sequence, which is exactly
+    what enabling ``WORK_DIARY_FILE_LOCKS`` provides.
     """
     fingerprint = _stat_fingerprint(path)
     if fingerprint is None:
@@ -419,6 +429,12 @@ def _cache_reminder_state(path: Path, state: ReminderState) -> None:
     Marks the entry as most-recently-used and evicts the
     least-recently-used entry if the cache would exceed
     ``_REMINDER_STATE_CACHE_MAX_ENTRIES``.
+
+    The same single-writer assumption documented on :func:`_cache_state`
+    applies here: this fingerprints *path* after the rename, and under
+    multi-writer deployments callers should enable
+    ``WORK_DIARY_FILE_LOCKS`` so the entire write+stat sequence is
+    serialized at the filesystem level.
     """
     fingerprint = _stat_fingerprint(path)
     if fingerprint is None:
@@ -451,8 +467,11 @@ def _atomic_write_text(path: Path, content: str) -> None:
             fh.write(content)
         temp_path.replace(path)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        # Use missing_ok=True so a race with an external cleanup (or the
+        # successful rename above, which moves temp_path away) does not
+        # raise here. This avoids a TOCTOU window between exists() and
+        # unlink() that could otherwise surface as a spurious error.
+        temp_path.unlink(missing_ok=True)
 
 
 @contextmanager
@@ -557,21 +576,39 @@ def _load_state(week_key: str) -> DiaryState:
             _STATE_CACHE.pop(path, None)
         return _empty_state(week_key)
 
-    fingerprint = _stat_fingerprint(path)
+    pre_read_fingerprint = _stat_fingerprint(path)
 
     with _STATE_CACHE_LOCK:
         cached = _STATE_CACHE.get(path)
-        if cached is not None and fingerprint is not None and cached[0] == fingerprint:
+        if (
+            cached is not None
+            and pre_read_fingerprint is not None
+            and cached[0] == pre_read_fingerprint
+        ):
             _STATE_CACHE.move_to_end(path)
             return copy.deepcopy(cached[1])
 
     raw_state = json.loads(path.read_text(encoding="utf-8"))
     validated = _validate_state(raw_state, week_key)
     migrated = _migrate_state(validated)
-    if fingerprint is not None:
+
+    # Re-stat after the read and only cache when the fingerprint is
+    # stable across the read. Otherwise the file could have been
+    # rewritten between our pre-read stat and the read itself, which
+    # would associate the pre-read fingerprint with content that
+    # actually came from a later revision and let a subsequent reader
+    # get a cache hit on a fingerprint that does not correspond to the
+    # cached state. Skipping the cache populate in that case is safe:
+    # the next call will re-read and try again.
+    post_read_fingerprint = _stat_fingerprint(path)
+    if (
+        pre_read_fingerprint is not None
+        and post_read_fingerprint is not None
+        and pre_read_fingerprint == post_read_fingerprint
+    ):
         snapshot = copy.deepcopy(migrated)
         with _STATE_CACHE_LOCK:
-            _STATE_CACHE[path] = (fingerprint, snapshot)
+            _STATE_CACHE[path] = (post_read_fingerprint, snapshot)
             _STATE_CACHE.move_to_end(path)
             while len(_STATE_CACHE) > _STATE_CACHE_MAX_ENTRIES:
                 _STATE_CACHE.popitem(last=False)
@@ -585,21 +622,33 @@ def _load_reminder_state() -> ReminderState:
             _REMINDER_STATE_CACHE.pop(path, None)
         return _empty_reminder_state()
 
-    fingerprint = _stat_fingerprint(path)
+    pre_read_fingerprint = _stat_fingerprint(path)
 
     with _REMINDER_STATE_CACHE_LOCK:
         cached = _REMINDER_STATE_CACHE.get(path)
-        if cached is not None and fingerprint is not None and cached[0] == fingerprint:
+        if (
+            cached is not None
+            and pre_read_fingerprint is not None
+            and cached[0] == pre_read_fingerprint
+        ):
             _REMINDER_STATE_CACHE.move_to_end(path)
             return copy.deepcopy(cached[1])
 
     raw_state = json.loads(path.read_text(encoding="utf-8"))
     validated = _validate_reminder_state(raw_state)
     migrated = _migrate_reminder_state(validated)
-    if fingerprint is not None:
+
+    # Re-stat after the read and only cache when the fingerprint is
+    # stable across the read; see _load_state for the rationale.
+    post_read_fingerprint = _stat_fingerprint(path)
+    if (
+        pre_read_fingerprint is not None
+        and post_read_fingerprint is not None
+        and pre_read_fingerprint == post_read_fingerprint
+    ):
         snapshot = copy.deepcopy(migrated)
         with _REMINDER_STATE_CACHE_LOCK:
-            _REMINDER_STATE_CACHE[path] = (fingerprint, snapshot)
+            _REMINDER_STATE_CACHE[path] = (post_read_fingerprint, snapshot)
             _REMINDER_STATE_CACHE.move_to_end(path)
             while len(_REMINDER_STATE_CACHE) > _REMINDER_STATE_CACHE_MAX_ENTRIES:
                 _REMINDER_STATE_CACHE.popitem(last=False)

@@ -2645,6 +2645,92 @@ class TestStateCacheBounds:
         assert len(diary_mod._REMINDER_STATE_CACHE) == 1
 
 
+class TestPopulateRaceSafety:
+    def test_state_cache_not_populated_when_file_changes_during_read(self, diary_dir, monkeypatch):
+        """If the diary file is rewritten between the pre-read stat and
+        the read itself, the cache must not be populated with the
+        pre-read fingerprint pointing at the post-edit content. The next
+        load should re-read from disk rather than serve a cache hit
+        whose fingerprint does not match the cached state."""
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "original")
+
+        path = diary_dir / f"{week_key}.json"
+
+        # Drop the existing cache entry so the next load takes the
+        # populate path.
+        with diary_mod._STATE_CACHE_LOCK:
+            diary_mod._STATE_CACHE.pop(path, None)
+
+        original_read_text = Path.read_text
+
+        def mutating_read_text(self, *args, **kwargs):
+            # Simulate an external write landing between the pre-read
+            # stat and the read: bump mtime and change size before the
+            # read returns.
+            if self == path:
+                replacement = {
+                    "weekKey": week_key,
+                    "projects": {},
+                    "projectNotes": {},
+                    "notes": [
+                        {"content": "rewritten mid-read with extra padding " * 5},
+                    ],
+                }
+                self.write_text(json.dumps(replacement), encoding="utf-8")
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", mutating_read_text)
+
+        diary_mod._load_state(week_key)
+
+        # Cache must either be empty for this path, or hold the
+        # post-read fingerprint — never the stale pre-read one.
+        cached = diary_mod._STATE_CACHE.get(path)
+        if cached is not None:
+            assert cached[0] == diary_mod._stat_fingerprint(path)
+
+    def test_reminder_cache_not_populated_when_file_changes_during_read(
+        self, diary_dir, monkeypatch
+    ):
+        """Same defense for reminder state: a write landing between the
+        pre-read stat and the read must not associate the pre-read
+        fingerprint with post-edit content in the cache."""
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "original")
+
+        path = diary_dir / "reminders.json"
+
+        with diary_mod._REMINDER_STATE_CACHE_LOCK:
+            diary_mod._REMINDER_STATE_CACHE.pop(path, None)
+
+        original_read_text = Path.read_text
+
+        def mutating_read_text(self, *args, **kwargs):
+            if self == path:
+                replacement = {
+                    "reminders": {
+                        week_key: [
+                            {
+                                "content": "rewritten mid-read with padding " * 5,
+                                "completed": False,
+                            },
+                        ],
+                    },
+                }
+                self.write_text(json.dumps(replacement), encoding="utf-8")
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", mutating_read_text)
+
+        diary_mod._load_reminder_state()
+
+        cached = diary_mod._REMINDER_STATE_CACHE.get(path)
+        if cached is not None:
+            assert cached[0] == diary_mod._stat_fingerprint(path)
+
+
 class TestWeekLockStriping:
     def test_same_week_key_returns_same_lock_object(self, diary_dir):
         lock_a = diary_mod._get_week_threading_lock("2026-03-02")
