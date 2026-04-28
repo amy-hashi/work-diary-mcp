@@ -297,12 +297,27 @@ _REMINDER_THREADING_LOCK = threading.Lock()
 _ENSURED_PAGES_LOCK = threading.Lock()
 
 # Parsed-state caches keyed by file path. The cached value is a tuple of
-# ``(mtime_ns, deep-copied state)``. Entries are returned as deep copies
-# so callers can freely mutate the returned dict without corrupting the
-# cache, and the cache is invalidated automatically when the file's mtime
-# changes (e.g. an external editor modified the JSON on disk).
-_STATE_CACHE: dict[Path, tuple[int, DiaryState]] = {}
-_REMINDER_STATE_CACHE: dict[Path, tuple[int, ReminderState]] = {}
+# ``(fingerprint, deep-copied state)`` where ``fingerprint`` is
+# ``(st_mtime_ns, st_size)``. Entries are returned as deep copies so
+# callers can freely mutate the returned dict without corrupting the
+# cache, and the cache is invalidated when either field changes — which
+# catches both ordinary external edits (mtime bumps) and the realistic
+# defense-in-depth case where a tool preserves or restores mtime
+# (``cp -p``, ``rsync --times``, restoring from backup, ``os.utime``,
+# etc.) but the replacement file's size differs.
+_StateFingerprint = tuple[int, int]
+_STATE_CACHE: dict[Path, tuple[_StateFingerprint, DiaryState]] = {}
+_REMINDER_STATE_CACHE: dict[Path, tuple[_StateFingerprint, ReminderState]] = {}
+
+
+def _stat_fingerprint(path: Path) -> _StateFingerprint | None:
+    """Return a ``(mtime_ns, size)`` fingerprint for *path*, or None on error."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
 
 # Memoized "this page already exists on disk" results for
 # :func:`_ensure_week_page`, keyed by ``(today's ISO date, week_key)``.
@@ -348,20 +363,18 @@ def _reset_caches() -> None:
 
 def _cache_state(path: Path, state: DiaryState) -> None:
     """Refresh the parsed-state cache after a successful save."""
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
+    fingerprint = _stat_fingerprint(path)
+    if fingerprint is None:
         return
-    _STATE_CACHE[path] = (mtime_ns, copy.deepcopy(state))
+    _STATE_CACHE[path] = (fingerprint, copy.deepcopy(state))
 
 
 def _cache_reminder_state(path: Path, state: ReminderState) -> None:
     """Refresh the parsed reminder-state cache after a successful save."""
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
+    fingerprint = _stat_fingerprint(path)
+    if fingerprint is None:
         return
-    _REMINDER_STATE_CACHE[path] = (mtime_ns, copy.deepcopy(state))
+    _REMINDER_STATE_CACHE[path] = (fingerprint, copy.deepcopy(state))
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -485,20 +498,17 @@ def _load_state(week_key: str) -> DiaryState:
     if not path.exists():
         return _empty_state(week_key)
 
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = None
+    fingerprint = _stat_fingerprint(path)
 
     cached = _STATE_CACHE.get(path)
-    if cached is not None and mtime_ns is not None and cached[0] == mtime_ns:
+    if cached is not None and fingerprint is not None and cached[0] == fingerprint:
         return copy.deepcopy(cached[1])
 
     raw_state = json.loads(path.read_text(encoding="utf-8"))
     validated = _validate_state(raw_state, week_key)
     migrated = _migrate_state(validated)
-    if mtime_ns is not None:
-        _STATE_CACHE[path] = (mtime_ns, copy.deepcopy(migrated))
+    if fingerprint is not None:
+        _STATE_CACHE[path] = (fingerprint, copy.deepcopy(migrated))
     return migrated
 
 
@@ -507,20 +517,17 @@ def _load_reminder_state() -> ReminderState:
     if not path.exists():
         return _empty_reminder_state()
 
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = None
+    fingerprint = _stat_fingerprint(path)
 
     cached = _REMINDER_STATE_CACHE.get(path)
-    if cached is not None and mtime_ns is not None and cached[0] == mtime_ns:
+    if cached is not None and fingerprint is not None and cached[0] == fingerprint:
         return copy.deepcopy(cached[1])
 
     raw_state = json.loads(path.read_text(encoding="utf-8"))
     validated = _validate_reminder_state(raw_state)
     migrated = _migrate_reminder_state(validated)
-    if mtime_ns is not None:
-        _REMINDER_STATE_CACHE[path] = (mtime_ns, copy.deepcopy(migrated))
+    if fingerprint is not None:
+        _REMINDER_STATE_CACHE[path] = (fingerprint, copy.deepcopy(migrated))
     return migrated
 
 

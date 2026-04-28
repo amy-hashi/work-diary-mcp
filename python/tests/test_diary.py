@@ -2370,7 +2370,7 @@ class TestJiraLinkificationIntegration:
 
 
 class TestStateCaching:
-    def test_load_state_returns_cached_copy_when_mtime_unchanged(self, diary_dir):
+    def test_load_state_returns_cached_copy_when_fingerprint_unchanged(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.get_or_create_page_for_week(week_key)
         diary_mod.add_note(week_key, "first note")
@@ -2378,10 +2378,16 @@ class TestStateCaching:
         path = diary_dir / f"{week_key}.json"
         assert path in diary_mod._STATE_CACHE
 
-        # Corrupt the on-disk file but leave its mtime untouched. A cached
-        # read should not touch disk and should still return the prior state.
-        original_mtime_ns = path.stat().st_mtime_ns
-        path.write_text("not valid json", encoding="utf-8")
+        # Corrupt the on-disk file but preserve both its mtime AND its
+        # byte length so the (mtime_ns, size) fingerprint stays equal. A
+        # cached read should not touch disk and should still return the
+        # prior state.
+        original_stat = path.stat()
+        original_mtime_ns = original_stat.st_mtime_ns
+        original_size = original_stat.st_size
+        garbage = ("x" * original_size).encode("utf-8")
+        path.write_bytes(garbage)
+        assert path.stat().st_size == original_size
         os.utime(path, ns=(original_mtime_ns, original_mtime_ns))
 
         state = diary_mod._load_state(week_key)
@@ -2421,15 +2427,19 @@ class TestStateCaching:
 
 
 class TestReminderStateCaching:
-    def test_load_reminder_state_uses_cache_when_mtime_unchanged(self, diary_dir):
+    def test_load_reminder_state_uses_cache_when_fingerprint_unchanged(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.add_reminder(week_key, "remember the milk")
 
         path = diary_dir / "reminders.json"
         assert path in diary_mod._REMINDER_STATE_CACHE
 
-        original_mtime_ns = path.stat().st_mtime_ns
-        path.write_text("garbage", encoding="utf-8")
+        original_stat = path.stat()
+        original_mtime_ns = original_stat.st_mtime_ns
+        original_size = original_stat.st_size
+        garbage = ("x" * original_size).encode("utf-8")
+        path.write_bytes(garbage)
+        assert path.stat().st_size == original_size
         os.utime(path, ns=(original_mtime_ns, original_mtime_ns))
 
         state = diary_mod._load_reminder_state()
@@ -2559,6 +2569,59 @@ class TestReminderCacheMatchesMigratedShape:
         disk_state = diary_mod._load_state(week_key)
 
         assert cached_state == disk_state
+
+
+class TestStateCacheFingerprint:
+    def test_state_cache_invalidates_when_size_changes_with_preserved_mtime(self, diary_dir):
+        """An external edit that preserves mtime but changes file size
+        (e.g. ``cp -p`` or a backup restore) must still invalidate the
+        diary state cache."""
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_note(week_key, "original")
+
+        path = diary_dir / f"{week_key}.json"
+        original_mtime_ns = path.stat().st_mtime_ns
+
+        replacement = {
+            "weekKey": week_key,
+            "projects": {},
+            "projectNotes": {},
+            "notes": [
+                {"content": "rewritten externally with much longer content " * 5},
+            ],
+        }
+        path.write_text(json.dumps(replacement), encoding="utf-8")
+        # Restore the prior mtime to simulate a tool that preserves it
+        # (cp -p, rsync --times, restore from backup, explicit os.utime).
+        os.utime(path, ns=(original_mtime_ns, original_mtime_ns))
+
+        state = diary_mod._load_state(week_key)
+        assert state["notes"][0]["content"].startswith("rewritten externally")
+
+    def test_reminder_cache_invalidates_when_size_changes_with_preserved_mtime(self, diary_dir):
+        """Same defense-in-depth check for reminder state."""
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "original reminder")
+
+        path = diary_dir / "reminders.json"
+        original_mtime_ns = path.stat().st_mtime_ns
+
+        replacement = {
+            "reminders": {
+                week_key: [
+                    {
+                        "content": "rewritten externally with extra padding " * 5,
+                        "completed": False,
+                    },
+                ],
+            },
+        }
+        path.write_text(json.dumps(replacement), encoding="utf-8")
+        os.utime(path, ns=(original_mtime_ns, original_mtime_ns))
+
+        state = diary_mod._load_reminder_state()
+        assert state["reminders"][week_key][0]["content"].startswith("rewritten externally")
 
 
 class TestFileLockToggle:
