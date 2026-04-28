@@ -6,6 +6,8 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-28
+
 ### Added
 - New terminal project statuses **Shipped** and **GA**, both rendered with the 🚀 emoji and excluded from carry-forward.
 - New non-terminal project status **In Planning**, rendered with the 💡 emoji.
