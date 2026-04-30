@@ -193,7 +193,7 @@ The configured path is expanded automatically and the directory is created on fi
 | `edit_note` | Replace the content of an existing note by its index number. Supports an optional `date` to target a specific week. |
 | `delete_note` | Delete a note by its index number. Supports an optional `date` to target a specific week. |
 | `add_reminder` | Add a reminder for the current or a future week without creating a future diary page. Supports an optional `due_date` and `date`. |
-| `list_reminders` | List reminders for the target week, including checkbox state and any due date. |
+| `list_reminders` | List reminders for the target week, including checkbox state and any due date. Supports an optional `date` to target a specific week. |
 | `complete_reminder` | Mark a reminder as completed for the target week. Supports an optional `date`. |
 | `reopen_reminder` | Mark a completed reminder as incomplete for the target week. Supports an optional `date`. |
 | `get_diary` | Retrieve the full Markdown diary for the current or any past week. |
