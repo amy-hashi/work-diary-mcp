@@ -42,6 +42,8 @@ The Python implementation lives under `python/`.
   - Jira ticket auto-linking
 - `markdown.py`
   - Markdown rendering for diary output
+- `roles.py`
+  - engagement role definitions and normalization
 - `server.py`
   - FastMCP server and MCP tool definitions
 - `statuses.py`

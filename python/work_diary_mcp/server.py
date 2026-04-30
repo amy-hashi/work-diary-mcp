@@ -21,6 +21,7 @@ from work_diary_mcp.diary import (
     parse_week_key,
     remove_project,
     rename_project,
+    set_project_role,
     set_reminder_completed,
     update_project_status,
 )
@@ -31,9 +32,10 @@ mcp = FastMCP(
         "This server manages a weekly work diary. "
         "Use it to track project statuses and log notes throughout the week. "
         "Each Monday a new diary page is created automatically, carrying forward "
-        "projects from the prior week (excluding any projects marked as Done, "
-        "Completed, Cancelled, or otherwise complete). Diary files are stored as "
-        "Markdown and can be copied directly into Microsoft Loop.\n\n"
+        "projects (and their engagement roles) from the prior week (excluding any "
+        "projects marked as Done, Completed, Cancelled, or otherwise complete). "
+        "Diary files are stored as Markdown and can be copied directly into "
+        "Microsoft Loop.\n\n"
         "## Tone and style\n\n"
         "Before saving any note or project update, review the content and transform "
         "it into professional but authentic language. Preserve the writer's voice and "
@@ -80,6 +82,17 @@ _REMINDER_DATE_HELP_TEXT = (
 )
 
 
+_ROLE_HELP_TEXT = (
+    "Optional role for the project, describing the engagement mode (inspired by "
+    "the Principal Engineer role framework). Accepts canonical names ('Sponsor', "
+    "'Guide', 'Catcher', 'Advisor', 'Catalyst', 'Participant'), emoji shortcodes "
+    "(':rocket:', ':world_map:', ':fire_extinguisher:', ':compass:', ':test_tube:', "
+    "':raising_hand:'), bare emoji ('🚀', '🗺️', '🧯', '🧭', '🧪', '🙋'), or already-formatted "
+    "display values like '🚀 Sponsor'. Pass an empty string to clear a previously-set "
+    "role. Pass null (the default) to leave the role untouched."
+)
+
+
 def _resolve_target_page(date: str | None) -> dict:
     """Return the target diary page for a write operation."""
     if not date:
@@ -112,14 +125,15 @@ def update_project_status_tool(
         "rather than replacing it. Has no effect when no prior note exists. "
         "Defaults to False.",
     ] = False,
+    role: Annotated[str | None, _ROLE_HELP_TEXT] = None,
     date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Update (or add) a project's status in a work diary week.
 
     Before calling this tool:
-    - Transform the project name, status, and note into professional but authentic
-      language, preserving the writer's voice, technical terms, Jira references,
-      and Markdown links.
+    - Transform the project name, status, note, and role into professional
+      but authentic language, preserving the writer's voice, technical terms,
+      Jira references, and Markdown links.
     - If the content appears to be an incomplete thought or fragment, ask the
       user a clarifying question instead of saving.
 
@@ -128,7 +142,7 @@ def update_project_status_tool(
     """
     try:
         page = _resolve_target_page(date)
-        update_project_status(page["week_key"], project, status, note, append_note)
+        update_project_status(page["week_key"], project, status, note, append_note, role)
 
         prefix = (
             f"📅 Created new diary for the week of **{page['week_label']}**.\n\n"
@@ -148,17 +162,20 @@ def bulk_update_projects_tool(
     updates: Annotated[
         list[dict[str, object]],
         "List of project updates. Each item must have 'project' (str) and "
-        "'status' (str), and may optionally include 'note' (str) and "
-        "'append_note' (bool, default false).",
+        "'status' (str), and may optionally include 'note' (str), "
+        "'append_note' (bool, default false), and 'role' (str | None). "
+        "For 'role', pass null (or omit the field) to leave any existing "
+        "role unchanged, an empty string to clear it, or any value accepted "
+        "by set_project_role to set it.",
     ],
     date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
     """Update multiple projects in a single operation.
 
     Before calling this tool:
-    - Transform each project name, status, and note into professional but authentic
-      language, preserving the writer's voice, technical terms, Jira references,
-      and Markdown links.
+    - Transform each project name, status, note, and role into professional
+      but authentic language, preserving the writer's voice, technical terms,
+      Jira references, and Markdown links.
     - If any entry appears to be an incomplete thought or fragment, ask the
       user a clarifying question instead of saving.
 
@@ -180,6 +197,50 @@ def bulk_update_projects_tool(
         return (
             f"{prefix}✅ Updated {len(results)} project(s) for the week of "
             f"**{page['week_label']}**:\n\n{result_lines}"
+        )
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+def set_project_role_tool(
+    project: Annotated[
+        str,
+        "The name of an existing project whose role should be set or cleared. "
+        "Row references such as 'project 2' are also accepted.",
+    ],
+    role: Annotated[
+        str,
+        "The role to assign. Accepts canonical names ('Sponsor', 'Guide', "
+        "'Catcher', 'Advisor', 'Catalyst', 'Participant'), emoji shortcodes "
+        "(':rocket:', ':world_map:', ':fire_extinguisher:', ':compass:', "
+        "':test_tube:', ':raising_hand:'), bare emoji, or already-formatted "
+        "display values like '🚀 Sponsor'. Pass an empty string to clear the "
+        "role.",
+    ],
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
+) -> str:
+    """Set or clear the role for an existing project in a diary week.
+
+    Roles describe the engagement mode an engineer is taking on a project,
+    inspired by the Principal Engineer role framework: Sponsor, Guide,
+    Catcher, Advisor, Catalyst, Participant. Roles are rendered alongside
+    the project status in the weekly diary's project table and are carried
+    forward week-over-week alongside the project itself.
+
+    Raises an error if the project is not found.
+    """
+    try:
+        page = _resolve_target_page(date)
+        resolved = set_project_role(page["week_key"], project, role)
+        if role.strip():
+            return (
+                f"🎭 Set role for **{resolved}** in your diary for the week of "
+                f"**{page['week_label']}**."
+            )
+        return (
+            f"🧹 Cleared role for **{resolved}** in your diary for the week of "
+            f"**{page['week_label']}**."
         )
     except Exception as e:
         raise ToolError(str(e)) from e
