@@ -2903,35 +2903,35 @@ class TestProjectRoles:
     def test_update_project_status_sets_role(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role=":rocket:")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"]["Alpha"] == "🚀 Sponsor"
 
     def test_update_project_status_role_none_leaves_existing_role_untouched(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Guide")
         diary_mod.update_project_status(week_key, "Alpha", "Blocked")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"]["Alpha"] == "🗺️ Guide"
 
     def test_update_project_status_empty_role_clears(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Sponsor")
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role="")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert "Alpha" not in state["projectRoles"]
 
     def test_set_project_role_sets_role(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track")
         diary_mod.set_project_role(week_key, "Alpha", "🧭")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"]["Alpha"] == "🧭 Advisor"
 
     def test_set_project_role_clears_role_when_empty(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Catcher")
         diary_mod.set_project_role(week_key, "Alpha", "")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert "Alpha" not in state["projectRoles"]
 
     def test_set_project_role_unknown_project_raises(self, diary_dir):
@@ -2945,7 +2945,7 @@ class TestProjectRoles:
         diary_mod.update_project_status(week_key, "Alpha", "On Track")
         diary_mod.update_project_status(week_key, "Beta", "Blocked")
         diary_mod.set_project_role(week_key, "project 2", "Catalyst")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"] == {"Beta": "🧪 Catalyst"}
 
     def test_bulk_update_sets_roles(self, diary_dir):
@@ -2957,7 +2957,7 @@ class TestProjectRoles:
                 {"project": "Beta", "status": "Blocked", "role": ":compass:"},
             ],
         )
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"] == {
             "Alpha": "🚀 Sponsor",
             "Beta": "🧭 Advisor",
@@ -2967,14 +2967,14 @@ class TestProjectRoles:
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Guide")
         diary_mod.remove_project(week_key, "Alpha")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"] == {}
 
     def test_rename_project_preserves_role(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Catcher")
         diary_mod.rename_project(week_key, "Alpha", "Alpha Prime")
-        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"] == {"Alpha Prime": "🧯 Catcher"}
 
     def test_role_carries_forward_with_project(self, diary_dir):
