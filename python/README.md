@@ -356,6 +356,7 @@ python/
     ├── diary.py               # State management, reminders, week helpers, persistence
     ├── jira.py                # Jira ticket auto-linking
     ├── markdown.py            # Markdown renderer
+    ├── roles.py               # Engagement role definitions and normalization
     ├── server.py              # FastMCP server and tool definitions
     └── statuses.py            # Status definitions (emoji map, completion set)
 ```
@@ -377,6 +378,9 @@ Each week's diary is stored as two files in the configured data directory, keyed
   "projectNotes": {
     "[Project Phoenix](https://jira.example.com/browse/PROJ-123)": "A few bugs found; [PROJ-124](https://jira.example.com/browse/PROJ-124) opened to track."
   },
+  "projectRoles": {
+    "[Project Phoenix](https://jira.example.com/browse/PROJ-123)": "🚀 Sponsor"
+  },
   "notes": [
     {
       "content": "Kickoff meeting with TPM for Platform Infra."
@@ -397,9 +401,9 @@ Each week's diary is stored as two files in the configured data directory, keyed
 
 ## Project Status
 
-| Project | Status | Notes |
-|---------|--------|-------|
-| [Project Phoenix](https://jira.example.com/browse/PROJ-123) | 🟢 On Track | A few bugs found; [PROJ-124](https://jira.example.com/browse/PROJ-124) opened to track. |
+| Project | Role | Status | Notes |
+|---------|------|--------|-------|
+| [Project Phoenix](https://jira.example.com/browse/PROJ-123) | 🚀 Sponsor | 🟢 On Track | A few bugs found; [PROJ-124](https://jira.example.com/browse/PROJ-124) opened to track. |
 
 ## Notes
 
@@ -432,6 +436,7 @@ On the first interaction of each new week, a fresh diary page is created automat
 Carry-forward behavior is currently:
 
 - **Project statuses are carried forward**
+- **Project roles are carried forward**
 - **Project inline notes are not carried forward**
 - **General notes are not carried forward**
 - **Completed or cancelled projects are not carried forward**

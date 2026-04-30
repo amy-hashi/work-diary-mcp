@@ -440,6 +440,7 @@ work-diary-mcp/
         ├── diary.py               # State management, reminders, week helpers, persistence
         ├── jira.py                # Jira ticket auto-linking
         ├── markdown.py            # Markdown renderer
+        ├── roles.py               # Engagement role definitions and normalization
         ├── server.py              # FastMCP server and tool definitions
         └── statuses.py            # Status definitions (emoji map, completion set)
 ```
