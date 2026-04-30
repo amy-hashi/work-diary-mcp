@@ -275,7 +275,12 @@ def _migrate_state(state: DiaryState) -> DiaryState:
             # Role values are normalized via format_role on write, but
             # re-normalize here so any legacy raw values left over from
             # earlier migrations end up in the canonical display form.
-            new_roles[new_key] = format_role(old_roles[key])
+            # Skip entries that normalize to an empty string so legacy or
+            # hand-edited blank values don't get persisted (and then
+            # carried forward) as junk role entries.
+            formatted_role = format_role(old_roles[key])
+            if formatted_role:
+                new_roles[new_key] = formatted_role
     state["projects"] = new_projects
     state["projectNotes"] = new_notes
     state["projectRoles"] = new_roles
@@ -1140,6 +1145,11 @@ def bulk_update_projects(
         status      (str)           — new status
         note        (str | None)    — optional note (default: None)
         append_note (bool)          — append vs. replace note (default: False)
+        role        (str | None)    — optional engagement role. ``None``
+                                      (the default) leaves any existing
+                                      role untouched; an empty string
+                                      clears it; any other value is
+                                      normalized via ``format_role``.
 
     Returns a list of human-readable result strings, one per project.
     """

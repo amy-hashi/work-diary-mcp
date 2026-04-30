@@ -48,7 +48,7 @@ _EMOJI_TO_ROLE: dict[str, str] = {
 }
 
 
-def format_role(role: str) -> str:
+def format_role(role: str | None) -> str:
     """Return the emoji-decorated display string for a role.
 
     Accepts any of the following spellings (case-insensitive) and
@@ -57,11 +57,12 @@ def format_role(role: str) -> str:
     - bare role name: ``"sponsor"``, ``"Sponsor"``, ``"SPONSOR"``
     - emoji shortcode: ``":rocket:"``
     - bare emoji: ``"🚀"``
-    - already-formatted display: ``"🚀 Sponsor"``
-    - emoji + role separated by whitespace: ``":rocket: sponsor"``
+    - already-formatted display: ``"🚀 Sponsor"`` (or its shortcode equivalent)
 
-    Unknown values are returned trimmed but otherwise unchanged so callers
-    can still set arbitrary role labels if they want to.
+    Unknown values — including a known shortcode/emoji prefix followed by an
+    unrecognized custom label such as ``":rocket: Architect"`` — are returned
+    trimmed but otherwise unchanged so callers can still set arbitrary role
+    labels if they want to. ``None`` and empty/whitespace input return ``""``.
     """
     if role is None:
         return ""
@@ -76,14 +77,27 @@ def format_role(role: str) -> str:
     if lowered in ROLE_MAP:
         return ROLE_MAP[lowered]
 
-    # Emoji shortcode (possibly followed by a role name).
+    # Emoji shortcode, either bare or followed by the matching canonical
+    # role name. Any other suffix (e.g. ":rocket: Architect") is treated as
+    # a custom label and preserved as-is rather than silently rewritten.
     for shortcode, canonical in _SHORTCODE_TO_ROLE.items():
-        if lowered == shortcode or lowered.startswith(shortcode + " "):
+        if lowered == shortcode:
             return ROLE_MAP[canonical]
+        if lowered.startswith(shortcode + " "):
+            suffix = lowered[len(shortcode) + 1 :].strip()
+            if suffix == "" or suffix == canonical:
+                return ROLE_MAP[canonical]
+            # Custom suffix — fall through to preserve the user's label.
 
-    # Bare emoji (possibly followed by a role name).
+    # Bare emoji, either alone or followed by the matching canonical role
+    # name. Same suffix-preservation rule as for shortcodes above.
     for emoji, canonical in _EMOJI_TO_ROLE.items():
-        if cleaned == emoji or cleaned.startswith(emoji + " "):
+        if cleaned == emoji:
             return ROLE_MAP[canonical]
+        if cleaned.startswith(emoji + " "):
+            suffix = cleaned[len(emoji) + 1 :].strip().lower()
+            if suffix == "" or suffix == canonical:
+                return ROLE_MAP[canonical]
+            # Custom suffix — fall through to preserve the user's label.
 
     return cleaned

@@ -2898,6 +2898,29 @@ class TestFormatRole:
         assert format_role("") == ""
         assert format_role("   ") == ""
 
+    def test_none_returns_empty(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role(None) == ""
+
+    def test_shortcode_with_canonical_suffix_normalizes(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role(":rocket: sponsor") == "🚀 Sponsor"
+        assert format_role(":rocket: Sponsor") == "🚀 Sponsor"
+
+    def test_shortcode_with_custom_suffix_preserved(self):
+        from work_diary_mcp.roles import format_role
+
+        # A known shortcode followed by an unrecognized label is treated as
+        # a custom user label and returned unchanged (modulo trimming).
+        assert format_role(":rocket: Architect") == ":rocket: Architect"
+
+    def test_emoji_with_custom_suffix_preserved(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role("🚀 Architect") == "🚀 Architect"
+
 
 class TestProjectRoles:
     def test_update_project_status_sets_role(self, diary_dir):
@@ -3050,3 +3073,20 @@ class TestProjectRoles:
         }
         md = render_diary(state)
         assert "| Alpha |  | 🟢 On Track |  |" in md
+
+    def test_legacy_empty_role_value_dropped_on_migration(self, diary_dir):
+        # Legacy or hand-edited diaries may contain blank role values; the
+        # migration step should drop them rather than persist (and then
+        # carry forward) empty entries.
+        week_key = "2026-03-02"
+        legacy = {
+            "weekKey": week_key,
+            "projects": {"Alpha": "On Track", "Beta": "In Progress"},
+            "projectNotes": {},
+            "projectRoles": {"Alpha": "", "Beta": "   "},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+        state = diary_mod._load_state(week_key)
+        assert state["projectRoles"] == {}

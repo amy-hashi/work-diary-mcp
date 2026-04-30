@@ -169,9 +169,9 @@ def bulk_update_projects_tool(
     """Update multiple projects in a single operation.
 
     Before calling this tool:
-    - Transform each project name, status, and note into professional but authentic
-      language, preserving the writer's voice, technical terms, Jira references,
-      and Markdown links.
+    - Transform each project name, status, note, and role into professional
+      but authentic language, preserving the writer's voice, technical terms,
+      Jira references, and Markdown links.
     - If any entry appears to be an incomplete thought or fragment, ask the
       user a clarifying question instead of saving.
 
