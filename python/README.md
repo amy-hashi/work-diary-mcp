@@ -17,6 +17,7 @@ For a running summary of changes, see [CHANGELOG.md](../CHANGELOG.md).
 - [Why Python?](#why-python)
 - [Features](#features)
 - [Supported Status Values](#supported-status-values)
+- [Supported Role Values](#supported-role-values)
 - [Jira Auto-Linking](#jira-auto-linking)
 - [Data Format](#data-format)
 - [Data Location](#data-location)
@@ -185,8 +186,9 @@ The configured path is expanded automatically and the directory is created on fi
 
 | Tool | Description |
 |------|-------------|
-| `update_project_status` | Update or add a project's status, with an optional inline note. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
-| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `update_project_status` | Update or add a project's status, with an optional inline note and an optional role. Pass `append_note: true` to append to an existing note instead of replacing it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Each entry may optionally include a `role`. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `set_project_role` | Set or clear the role for an existing project. Accepts canonical role names (`Sponsor`, `Guide`, `Catcher`, `Advisor`, `Catalyst`, `Participant`), emoji shortcodes (`:rocket:`, `:world_map:`, `:fire_extinguisher:`, `:compass:`, `:test_tube:`, `:raising_hand:`), bare emoji, or already-formatted display values. Pass an empty string to clear the role. Supports an optional `date` to target a specific week. |
 | `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for rename operations. |
 | `add_note` | Append a note to the general notes section. Supports an optional `date` to target a specific week. |
 | `edit_note` | Replace the content of an existing note by its index number. Supports an optional `date` to target a specific week. |
@@ -253,7 +255,8 @@ Reopen reminder 1 for next week
 
 ## Features
 
-- **Project status table** — track projects with a status and an optional inline note per project
+- **Project status table** — track projects with a status, an optional inline note, and an optional engagement role per project
+- **Engagement roles** — tag each project with a Principal Engineer–style engagement role (Sponsor, Guide, Catcher, Advisor, Catalyst, Participant) rendered with emoji in a dedicated `Role` column. Roles are carried forward week-over-week alongside the project itself.
 - **General notes** — append notes throughout the week
 - **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
@@ -288,6 +291,23 @@ Well-known statuses are automatically formatted with emoji. Any other string is 
 | In Planning | 💡 In Planning |
 
 Terminal statuses are used to decide what should not be carried forward into a new week.
+
+---
+
+## Supported Role Values
+
+Project roles are inspired by the Principal Engineer role framework. Each project may optionally have a role assigned alongside its status; the role is rendered in a dedicated `Role` column in the diary's project table.
+
+| Input | Rendered |
+|-------|----------|
+| Sponsor / `:rocket:` / 🚀 | 🚀 Sponsor |
+| Guide / `:world_map:` / 🗺️ | 🗺️ Guide |
+| Catcher / `:fire_extinguisher:` / 🧯 | 🧯 Catcher |
+| Advisor / `:compass:` / 🧭 | 🧭 Advisor |
+| Catalyst / `:test_tube:` / 🧪 | 🧪 Catalyst |
+| Participant / `:raising_hand:` / 🙋 | 🙋 Participant |
+
+Roles are case-insensitive on input and accept canonical names, emoji shortcodes, bare emoji, or already-formatted display values. Pass an empty string to clear a previously-set role. Unknown values are stored as-is so callers can use arbitrary role labels if they want to.
 
 ---
 

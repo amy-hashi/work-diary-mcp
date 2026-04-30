@@ -448,6 +448,7 @@ class TestHistoricalWeekWrites:
             "weekKey": target_week,
             "projects": {},
             "projectNotes": {},
+            "projectRoles": {},
             "notes": [],
         }
 
@@ -498,6 +499,7 @@ class TestHistoricalWeekWrites:
             "weekKey": current_week,
             "projects": {"Carry Me": "On Track"},
             "projectNotes": {},
+            "projectRoles": {},
             "notes": [],
         }
 
@@ -543,6 +545,7 @@ class TestHistoricalWeekWrites:
         assert carried == {
             "projects": {"Past Project": "On Track"},
             "projectNotes": {},
+            "projectRoles": {},
         }
 
 
@@ -638,6 +641,7 @@ class TestServerWriteTools:
             "Blocked",
             "Waiting on dependency.",
             False,
+            None,
         )
         assert "Stacks on TFE" in result
         assert diary_mod.get_week_label(target_week) in result
@@ -1002,7 +1006,7 @@ class TestReminders:
 
         assert state == original_state
         assert "- [ ] Follow up with the perf team." in markdown
-        assert "| Alpha | 🟢 On Track | existing note |" in markdown
+        assert "| Alpha |  | 🟢 On Track | existing note |" in markdown
 
     def test_set_reminder_completed_refreshes_existing_week_markdown_without_changing_notes(
         self, diary_dir
@@ -1260,7 +1264,11 @@ class TestMigrateState:
 class TestCarryForward:
     def test_no_prior_week_returns_empty(self, diary_dir):
         result = diary_mod._get_carry_forward_state()
-        assert result == {"projects": {}, "projectNotes": {}}  # notes are never carried forward
+        assert result == {
+            "projects": {},
+            "projectNotes": {},
+            "projectRoles": {},
+        }  # notes are never carried forward
 
     def test_carries_non_completed_projects(self, diary_dir):
         week_key = "2026-03-02"
@@ -1355,7 +1363,7 @@ class TestGetDiaryMarkdown:
         week_key = "2026-03-02"
         diary_mod.update_project_status(week_key, "Alpha", "Blocked", note="stuck")
         md = diary_mod.get_diary_markdown(week_key)
-        assert "| Alpha | 🔴 Blocked | stuck |" in md
+        assert "| Alpha |  | 🔴 Blocked | stuck |" in md
 
 
 class TestListProjects:
@@ -2837,3 +2845,208 @@ class TestAtomicWriteNoFsync:
 
         diary_mod._atomic_write_text(diary_dir / "sample.txt", "contents")
         assert called["fsync"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Roles
+# ---------------------------------------------------------------------------
+
+
+class TestFormatRole:
+    def test_canonical_role_name(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role("Sponsor") == "🚀 Sponsor"
+        assert format_role("sponsor") == "🚀 Sponsor"
+        assert format_role("SPONSOR") == "🚀 Sponsor"
+
+    def test_all_roles_have_distinct_emoji(self):
+        from work_diary_mcp.roles import ROLE_MAP
+
+        emoji_prefixes = [display.split(" ", 1)[0] for display in ROLE_MAP.values()]
+        assert len(emoji_prefixes) == len(set(emoji_prefixes))
+
+    def test_emoji_shortcode(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role(":rocket:") == "🚀 Sponsor"
+        assert format_role(":world_map:") == "🗺️ Guide"
+        assert format_role(":fire_extinguisher:") == "🧯 Catcher"
+        assert format_role(":compass:") == "🧭 Advisor"
+        assert format_role(":test_tube:") == "🧪 Catalyst"
+        assert format_role(":raising_hand:") == "🙋 Participant"
+
+    def test_bare_emoji(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role("🚀") == "🚀 Sponsor"
+        assert format_role("🧭") == "🧭 Advisor"
+
+    def test_already_formatted_value_passthrough(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role("🚀 Sponsor") == "🚀 Sponsor"
+
+    def test_unknown_value_returned_trimmed(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role("  Architect  ") == "Architect"
+
+    def test_empty_returns_empty(self):
+        from work_diary_mcp.roles import format_role
+
+        assert format_role("") == ""
+        assert format_role("   ") == ""
+
+
+class TestProjectRoles:
+    def test_update_project_status_sets_role(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role=":rocket:")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"]["Alpha"] == "🚀 Sponsor"
+
+    def test_update_project_status_role_none_leaves_existing_role_untouched(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Guide")
+        diary_mod.update_project_status(week_key, "Alpha", "Blocked")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"]["Alpha"] == "🗺️ Guide"
+
+    def test_update_project_status_empty_role_clears(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Sponsor")
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role="")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert "Alpha" not in state["projectRoles"]
+
+    def test_set_project_role_sets_role(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.set_project_role(week_key, "Alpha", "🧭")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"]["Alpha"] == "🧭 Advisor"
+
+    def test_set_project_role_clears_role_when_empty(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Catcher")
+        diary_mod.set_project_role(week_key, "Alpha", "")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert "Alpha" not in state["projectRoles"]
+
+    def test_set_project_role_unknown_project_raises(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        with pytest.raises(ValueError):
+            diary_mod.set_project_role(week_key, "Nope", "Guide")
+
+    def test_set_project_role_via_row_reference(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        diary_mod.set_project_role(week_key, "project 2", "Catalyst")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"] == {"Beta": "🧪 Catalyst"}
+
+    def test_bulk_update_sets_roles(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.bulk_update_projects(
+            week_key,
+            [
+                {"project": "Alpha", "status": "On Track", "role": "Sponsor"},
+                {"project": "Beta", "status": "Blocked", "role": ":compass:"},
+            ],
+        )
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"] == {
+            "Alpha": "🚀 Sponsor",
+            "Beta": "🧭 Advisor",
+        }
+
+    def test_remove_project_drops_role(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Guide")
+        diary_mod.remove_project(week_key, "Alpha")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"] == {}
+
+    def test_rename_project_preserves_role(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track", role="Catcher")
+        diary_mod.rename_project(week_key, "Alpha", "Alpha Prime")
+        state = json.loads((diary_dir / f"{week_key}.json").read_text())
+        assert state["projectRoles"] == {"Alpha Prime": "🧯 Catcher"}
+
+    def test_role_carries_forward_with_project(self, diary_dir):
+        prior_week = "2026-02-23"
+        previous_state = {
+            "weekKey": prior_week,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {"Alpha": "week-specific"},
+            "projectRoles": {"Alpha": "🚀 Sponsor"},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(previous_state), encoding="utf-8")
+
+        carried = diary_mod._get_carry_forward_state()
+        assert carried["projects"] == {"Alpha": "On Track"}
+        assert carried["projectNotes"] == {}
+        assert carried["projectRoles"] == {"Alpha": "🚀 Sponsor"}
+
+    def test_completed_project_role_not_carried_forward(self, diary_dir):
+        prior_week = "2026-02-23"
+        previous_state = {
+            "weekKey": prior_week,
+            "projects": {"Shipped": "Done", "Active": "In Progress"},
+            "projectNotes": {},
+            "projectRoles": {
+                "Shipped": "🚀 Sponsor",
+                "Active": "🗺️ Guide",
+            },
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(previous_state), encoding="utf-8")
+
+        carried = diary_mod._get_carry_forward_state()
+        assert carried["projects"] == {"Active": "In Progress"}
+        assert carried["projectRoles"] == {"Active": "🗺️ Guide"}
+
+    def test_legacy_state_without_project_roles_loads_cleanly(self, diary_dir):
+        week_key = "2026-03-02"
+        legacy = {
+            "weekKey": week_key,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+        state = diary_mod._load_state(week_key)
+        assert state["projectRoles"] == {}
+
+    def test_role_renders_in_markdown_role_column(self, diary_dir):
+        from work_diary_mcp.markdown import render_diary
+
+        state = {
+            "weekKey": "2026-03-02",
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "projectRoles": {"Alpha": "🚀 Sponsor"},
+            "notes": [],
+        }
+        md = render_diary(state)
+        assert "| Project | Role | Status | Notes |" in md
+        assert "| Alpha | 🚀 Sponsor | 🟢 On Track |  |" in md
+
+    def test_role_column_blank_when_no_role_set(self, diary_dir):
+        from work_diary_mcp.markdown import render_diary
+
+        state = {
+            "weekKey": "2026-03-02",
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "projectRoles": {},
+            "notes": [],
+        }
+        md = render_diary(state)
+        assert "| Alpha |  | 🟢 On Track |  |" in md
