@@ -12,6 +12,7 @@ from typing import NotRequired, TypedDict
 
 from work_diary_mcp.config import get_data_dir
 from work_diary_mcp.jira import linkify_jira_refs
+from work_diary_mcp.roles import format_role
 from work_diary_mcp.statuses import is_completed
 
 # --------------------------------------------------------------------------- #
@@ -34,6 +35,7 @@ class DiaryState(TypedDict):
     weekKey: str
     projects: dict[str, str]
     projectNotes: dict[str, str]
+    projectRoles: dict[str, str]
     notes: list[NoteEntry]
 
 
@@ -46,6 +48,7 @@ class ProjectUpdate(TypedDict):
     status: str
     note: NotRequired[str | None]
     append_note: NotRequired[bool]
+    role: NotRequired[str | None]
 
 
 # --------------------------------------------------------------------------- #
@@ -137,7 +140,13 @@ def _reminders_path() -> Path:
 
 
 def _empty_state(week_key: str) -> DiaryState:
-    return {"weekKey": week_key, "projects": {}, "projectNotes": {}, "notes": []}
+    return {
+        "weekKey": week_key,
+        "projects": {},
+        "projectNotes": {},
+        "projectRoles": {},
+        "notes": [],
+    }
 
 
 def _empty_reminder_state() -> ReminderState:
@@ -176,6 +185,16 @@ def _validate_state(state: DiaryState, week_key: str | None = None) -> DiaryStat
     for project, note in project_notes.items():
         if not isinstance(project, str) or not isinstance(note, str):
             raise ValueError("Diary state field 'projectNotes' must map strings to strings.")
+
+    project_roles = state.get("projectRoles")
+    if project_roles is None:
+        project_roles = {}
+        state["projectRoles"] = project_roles
+    if not isinstance(project_roles, dict):
+        raise ValueError("Diary state field 'projectRoles' must be an object.")
+    for project, role in project_roles.items():
+        if not isinstance(project, str) or not isinstance(role, str):
+            raise ValueError("Diary state field 'projectRoles' must map strings to strings.")
 
     notes = state.get("notes")
     if notes is None:
@@ -230,26 +249,46 @@ def _migrate_state(state: DiaryState) -> DiaryState:
     """Ensure older diary files load cleanly and have all fields linkified.
 
     Migrations applied (all idempotent):
-    1. Add ``projectNotes`` if missing (legacy files pre-date that field).
+    1. Add ``projectNotes`` and ``projectRoles`` if missing (legacy files
+       pre-date those fields).
     2. Linkify bare Jira ticket references in project keys, their associated
        notes, and general note contents so that files written before the
        auto-linking feature was introduced are upgraded on first load.
+    3. Re-key ``projectRoles`` in lockstep with any Jira-link rewrites of
+       project keys, re-normalize role values via ``format_role`` so legacy
+       raw values end up in canonical display form, and drop entries whose
+       formatted value is empty.
     """
     state.setdefault("projectNotes", {})
+    state.setdefault("projectRoles", {})
 
-    # Linkify project keys and their notes.  We rebuild both dicts together so
-    # the key used in projectNotes stays in sync with the key in projects.
+    # Linkify project keys and their notes.  We rebuild all three dicts
+    # together so the key used in projectNotes and projectRoles stays in
+    # sync with the key in projects.
     old_projects: dict[str, str] = state["projects"]
     old_notes: dict[str, str] = state["projectNotes"]
+    old_roles: dict[str, str] = state["projectRoles"]
     new_projects: dict[str, str] = {}
     new_notes: dict[str, str] = {}
+    new_roles: dict[str, str] = {}
     for key, status in old_projects.items():
         new_key = linkify_jira_refs(key)
         new_projects[new_key] = status
         if key in old_notes:
             new_notes[new_key] = linkify_jira_refs(old_notes[key])
+        if key in old_roles:
+            # Role values are normalized via format_role on write, but
+            # re-normalize here so any legacy raw values left over from
+            # earlier migrations end up in the canonical display form.
+            # Skip entries that normalize to an empty string so legacy or
+            # hand-edited blank values don't get persisted (and then
+            # carried forward) as junk role entries.
+            formatted_role = format_role(old_roles[key])
+            if formatted_role:
+                new_roles[new_key] = formatted_role
     state["projects"] = new_projects
     state["projectNotes"] = new_notes
+    state["projectRoles"] = new_roles
 
     # Linkify general note contents.
     for entry in state.get("notes", []):
@@ -733,10 +772,14 @@ def _week_write(week_key: str):
 
 
 def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
-    """Return projects from the most recent prior week, if any.
+    """Return projects (and their roles) from the most recent prior week.
 
     Projects whose status is considered complete (Done, Completed, Cancelled,
-    etc.) are excluded so they don't clutter the new week's diary.
+    etc.) are excluded so they don't clutter the new week's diary; their
+    roles are dropped alongside them.
+
+    Project roles for non-completed projects are carried forward so the
+    engagement role assigned to an ongoing project persists week-over-week.
 
     Project notes are intentionally not carried forward — they are
     week-specific context and should start fresh each week.
@@ -745,15 +788,19 @@ def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
     if target_week_key is not None:
         weeks = [week for week in weeks if week < target_week_key]
     if not weeks:
-        return {"projects": {}, "projectNotes": {}}
+        return {"projects": {}, "projectNotes": {}, "projectRoles": {}}
     last = _load_state(weeks[-1])
 
     projects: dict[str, str] = {}
+    project_roles: dict[str, str] = {}
+    last_roles = last.get("projectRoles", {})
     for project, status in last["projects"].items():
         if not is_completed(status):
             projects[project] = status
+            if project in last_roles:
+                project_roles[project] = last_roles[project]
 
-    return {"projects": projects, "projectNotes": {}}
+    return {"projects": projects, "projectNotes": {}, "projectRoles": project_roles}
 
 
 # --------------------------------------------------------------------------- #
@@ -844,13 +891,14 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
             initial_state = (
                 _get_carry_forward_state(week_key)
                 if carry_forward
-                else {"projects": {}, "projectNotes": {}}
+                else {"projects": {}, "projectNotes": {}, "projectRoles": {}}
             )
             _save_state(
                 {
                     "weekKey": week_key,
                     "projects": initial_state["projects"],
                     "projectNotes": initial_state["projectNotes"],
+                    "projectRoles": initial_state.get("projectRoles", {}),
                     "notes": [],
                 },
                 reminders=reminders,
@@ -879,6 +927,7 @@ def get_or_create_week_page() -> dict:
     Returns a dict with keys: week_key, week_label, is_new.
     On first call of the week, projects are carried forward from the prior week,
     excluding any projects with a completed status (Done, Completed, Cancelled, etc.).
+    Roles assigned to non-completed projects are carried forward alongside them.
     """
     return _ensure_week_page(get_week_key(), carry_forward=True)
 
@@ -1017,8 +1066,9 @@ def update_project_status(
     status: str,
     note: str | None = None,
     append_note: bool = False,
+    role: str | None = None,
 ) -> None:
-    """Update (or add) a project's status, and optionally its inline note.
+    """Update (or add) a project's status, and optionally its inline note or role.
 
     Args:
         week_key:    The week to update.
@@ -1028,6 +1078,10 @@ def update_project_status(
         append_note: When True and a note already exists, the new note is
                      appended (separated by " — ") rather than replacing it.
                      Has no effect when no prior note exists.
+        role:        Role for the project (e.g. 'Sponsor', ':rocket:', '🚀').
+                     Pass an empty string to clear a previously-set role.
+                     Pass ``None`` (the default) to leave any existing role
+                     untouched.
     """
     with _week_write(week_key) as reminders:
         state = _load_state(week_key)
@@ -1042,6 +1096,13 @@ def update_project_status(
                 state["projectNotes"][key] = state["projectNotes"][key] + " — " + linkified_note
             else:
                 state["projectNotes"][key] = linkified_note
+
+        if role is not None:
+            formatted_role = format_role(role)
+            if formatted_role:
+                state["projectRoles"][key] = formatted_role
+            else:
+                state["projectRoles"].pop(key, None)
 
         _save_state(state, reminders=reminders)
 
@@ -1076,6 +1137,9 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
         state["projectNotes"] = {
             (linked_new_name if k == old_key else k): v for k, v in state["projectNotes"].items()
         }
+        state["projectRoles"] = {
+            (linked_new_name if k == old_key else k): v for k, v in state["projectRoles"].items()
+        }
 
         _save_state(state, reminders=reminders)
 
@@ -1091,6 +1155,11 @@ def bulk_update_projects(
         status      (str)           — new status
         note        (str | None)    — optional note (default: None)
         append_note (bool)          — append vs. replace note (default: False)
+        role        (str | None)    — optional engagement role. ``None``
+                                      (the default) leaves any existing
+                                      role untouched; an empty string
+                                      clears it; any other value is
+                                      normalized via ``format_role``.
 
     Returns a list of human-readable result strings, one per project.
     """
@@ -1103,6 +1172,7 @@ def bulk_update_projects(
             status = item["status"]
             note = item.get("note")
             append_note = bool(item.get("append_note", False))
+            role = item.get("role")
 
             existing_key = _resolve_project_key_for_update(state, week_key, project)
             key = existing_key or linkify_jira_refs(project)
@@ -1115,6 +1185,13 @@ def bulk_update_projects(
                     state["projectNotes"][key] = state["projectNotes"][key] + " — " + linkified_note
                 else:
                     state["projectNotes"][key] = linkified_note
+
+            if role is not None:
+                formatted_role = format_role(role)
+                if formatted_role:
+                    state["projectRoles"][key] = formatted_role
+                else:
+                    state["projectRoles"].pop(key, None)
 
             results.append(f"{key} → {status}")
 
@@ -1131,7 +1208,40 @@ def remove_project(week_key: str, project: str) -> None:
 
         del state["projects"][existing_key]
         state["projectNotes"].pop(existing_key, None)
+        state["projectRoles"].pop(existing_key, None)
         _save_state(state, reminders=reminders)
+
+
+def set_project_role(week_key: str, project: str, role: str) -> str:
+    """Set or clear the role for an existing project.
+
+    Args:
+        week_key: The week to update.
+        project:  Project name or row reference (e.g. 'project 2'). The
+                  project must already exist in the target week.
+        role:     Role label. Accepts canonical names (``'Sponsor'``),
+                  emoji shortcodes (``':rocket:'``), bare emoji
+                  (``'🚀'``), or already-formatted display values
+                  (``'🚀 Sponsor'``). Pass an empty string to clear a
+                  previously-set role.
+
+    Returns:
+        The resolved project key that was updated. When *project* is a
+        row reference such as ``'project 2'`` this is the actual project
+        name in the diary, which callers can use for confirmation messages.
+    """
+    with _week_write(week_key) as reminders:
+        state = _load_state(week_key)
+        existing_key = _resolve_existing_project_key(state, week_key, project)
+
+        formatted_role = format_role(role)
+        if formatted_role:
+            state["projectRoles"][existing_key] = formatted_role
+        else:
+            state["projectRoles"].pop(existing_key, None)
+
+        _save_state(state, reminders=reminders)
+        return existing_key
 
 
 def clear_project_note(week_key: str, project: str) -> None:
