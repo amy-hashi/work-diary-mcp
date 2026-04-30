@@ -249,10 +249,15 @@ def _migrate_state(state: DiaryState) -> DiaryState:
     """Ensure older diary files load cleanly and have all fields linkified.
 
     Migrations applied (all idempotent):
-    1. Add ``projectNotes`` if missing (legacy files pre-date that field).
+    1. Add ``projectNotes`` and ``projectRoles`` if missing (legacy files
+       pre-date those fields).
     2. Linkify bare Jira ticket references in project keys, their associated
        notes, and general note contents so that files written before the
        auto-linking feature was introduced are upgraded on first load.
+    3. Re-key ``projectRoles`` in lockstep with any Jira-link rewrites of
+       project keys, re-normalize role values via ``format_role`` so legacy
+       raw values end up in canonical display form, and drop entries whose
+       formatted value is empty.
     """
     state.setdefault("projectNotes", {})
     state.setdefault("projectRoles", {})
@@ -767,10 +772,14 @@ def _week_write(week_key: str):
 
 
 def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
-    """Return projects from the most recent prior week, if any.
+    """Return projects (and their roles) from the most recent prior week.
 
     Projects whose status is considered complete (Done, Completed, Cancelled,
-    etc.) are excluded so they don't clutter the new week's diary.
+    etc.) are excluded so they don't clutter the new week's diary; their
+    roles are dropped alongside them.
+
+    Project roles for non-completed projects are carried forward so the
+    engagement role assigned to an ongoing project persists week-over-week.
 
     Project notes are intentionally not carried forward — they are
     week-specific context and should start fresh each week.
@@ -918,6 +927,7 @@ def get_or_create_week_page() -> dict:
     Returns a dict with keys: week_key, week_label, is_new.
     On first call of the week, projects are carried forward from the prior week,
     excluding any projects with a completed status (Done, Completed, Cancelled, etc.).
+    Roles assigned to non-completed projects are carried forward alongside them.
     """
     return _ensure_week_page(get_week_key(), carry_forward=True)
 
