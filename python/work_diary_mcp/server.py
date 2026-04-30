@@ -162,7 +162,10 @@ def bulk_update_projects_tool(
         list[dict[str, object]],
         "List of project updates. Each item must have 'project' (str) and "
         "'status' (str), and may optionally include 'note' (str), "
-        "'append_note' (bool, default false), and 'role' (str).",
+        "'append_note' (bool, default false), and 'role' (str | None). "
+        "For 'role', pass null (or omit the field) to leave any existing "
+        "role unchanged, an empty string to clear it, or any value accepted "
+        "by set_project_role to set it.",
     ],
     date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
@@ -228,14 +231,14 @@ def set_project_role_tool(
     """
     try:
         page = _resolve_target_page(date)
-        set_project_role(page["week_key"], project, role)
+        resolved = set_project_role(page["week_key"], project, role)
         if role.strip():
             return (
-                f"🎭 Set role for **{project}** in your diary for the week of "
+                f"🎭 Set role for **{resolved}** in your diary for the week of "
                 f"**{page['week_label']}**."
             )
         return (
-            f"🧹 Cleared role for **{project}** in your diary for the week of "
+            f"🧹 Cleared role for **{resolved}** in your diary for the week of "
             f"**{page['week_label']}**."
         )
     except Exception as e:

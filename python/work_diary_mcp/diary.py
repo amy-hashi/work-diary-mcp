@@ -1202,7 +1202,7 @@ def remove_project(week_key: str, project: str) -> None:
         _save_state(state, reminders=reminders)
 
 
-def set_project_role(week_key: str, project: str, role: str) -> None:
+def set_project_role(week_key: str, project: str, role: str) -> str:
     """Set or clear the role for an existing project.
 
     Args:
@@ -1214,6 +1214,11 @@ def set_project_role(week_key: str, project: str, role: str) -> None:
                   (``'🚀'``), or already-formatted display values
                   (``'🚀 Sponsor'``). Pass an empty string to clear a
                   previously-set role.
+
+    Returns:
+        The resolved project key that was updated. When *project* is a
+        row reference such as ``'project 2'`` this is the actual project
+        name in the diary, which callers can use for confirmation messages.
     """
     with _week_write(week_key) as reminders:
         state = _load_state(week_key)
@@ -1226,6 +1231,7 @@ def set_project_role(week_key: str, project: str, role: str) -> None:
             state["projectRoles"].pop(existing_key, None)
 
         _save_state(state, reminders=reminders)
+        return existing_key
 
 
 def clear_project_note(week_key: str, project: str) -> None:

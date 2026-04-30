@@ -2971,6 +2971,16 @@ class TestProjectRoles:
         state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
         assert state["projectRoles"] == {"Beta": "🧪 Catalyst"}
 
+    def test_set_project_role_returns_resolved_key(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.update_project_status(week_key, "Alpha", "On Track")
+        diary_mod.update_project_status(week_key, "Beta", "Blocked")
+        # Row references resolve to the actual project name; clearing
+        # also returns the resolved key so callers can echo it.
+        assert diary_mod.set_project_role(week_key, "project 2", "Catalyst") == "Beta"
+        assert diary_mod.set_project_role(week_key, "Alpha", "Sponsor") == "Alpha"
+        assert diary_mod.set_project_role(week_key, "project 1", "") == "Alpha"
+
     def test_bulk_update_sets_roles(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.bulk_update_projects(
