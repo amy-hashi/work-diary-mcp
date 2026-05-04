@@ -971,17 +971,43 @@ def _project_index_out_of_range_error(
 def _find_matching_project_key(state: DiaryState, project_ref: str) -> str | None:
     """Case-insensitive match of *project_ref* against existing project keys.
 
-    First tries a direct comparison, then falls back to comparing against
-    de-linkified keys so bare references like ``"CAG-477 Foo"`` resolve to
-    linkified keys like ``"[CAG-477](https://...) Foo"``.
+    Tries, in order:
+
+    1. Direct case-insensitive comparison.
+    2. De-linkified stored keys vs. the raw *project_ref*.
+    3. De-linkified stored keys vs. de-linkified *project_ref* (handles the
+       case where the caller passes a pre-linkified reference whose URL
+       differs from the stored key).
+
+    If the de-linkified fallback (steps 2–3) finds more than one distinct
+    match, a ``ValueError`` is raised so callers surface an explicit
+    ambiguity error instead of silently picking an arbitrary key.
     """
     ref_lower = project_ref.lower()
+    # 1. Direct match — fast path, no ambiguity possible.
     for key in state["projects"]:
         if key.lower() == ref_lower:
             return key
+
+    # 2–3. De-linkified fallback.  Collect all distinct matches so we can
+    # detect ambiguity when the prior duplication bug left multiple keys
+    # that de-linkify to the same bare name.
+    stripped_ref_lower = strip_markdown_links(project_ref).lower()
+    matches: list[str] = []
     for key in state["projects"]:
-        if strip_markdown_links(key).lower() == ref_lower:
-            return key
+        stripped_key = strip_markdown_links(key).lower()
+        if stripped_key == ref_lower or stripped_key == stripped_ref_lower:
+            matches.append(key)
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(f'"{m}"' for m in matches)
+        raise ValueError(
+            f'Project reference "{project_ref}" is ambiguous — it matches '
+            f"multiple existing projects: {names}. Please use the exact "
+            f"project name or a row reference (e.g. 'project 2') to clarify."
+        )
     return None
 
 
@@ -1138,14 +1164,16 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
 
         # Prevent collisions with an existing different project.  We check
         # against the linkified form (covers exact key clashes) and also
-        # strip links from existing keys (covers bare-vs-linkified clashes).
+        # strip links from both sides (covers bare-vs-linkified and
+        # linkified-with-different-URL clashes).
         other_keys = {k for k in state["projects"] if k != old_key}
+        stripped_new_lower = strip_markdown_links(linked_new_name).lower()
         collision = next(
             (
                 k
                 for k in other_keys
                 if k.lower() == linked_new_name.lower()
-                or strip_markdown_links(k).lower() == new_name.lower()
+                or strip_markdown_links(k).lower() == stripped_new_lower
             ),
             None,
         )
