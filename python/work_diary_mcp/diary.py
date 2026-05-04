@@ -1165,15 +1165,19 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
         # Prevent collisions with an existing different project.  We check
         # against the linkified form (covers exact key clashes) and also
         # strip links from both sides (covers bare-vs-linkified and
-        # linkified-with-different-URL clashes).
-        other_keys = {k for k in state["projects"] if k != old_key}
+        # linkified-with-different-URL clashes).  Iterate over the original
+        # dict keys (not a set) to preserve insertion order so the collision
+        # reported in the error message is deterministic.
         stripped_new_lower = strip_markdown_links(linked_new_name).lower()
         collision = next(
             (
                 k
-                for k in other_keys
-                if k.lower() == linked_new_name.lower()
-                or strip_markdown_links(k).lower() == stripped_new_lower
+                for k in state["projects"]
+                if k != old_key
+                and (
+                    k.lower() == linked_new_name.lower()
+                    or strip_markdown_links(k).lower() == stripped_new_lower
+                )
             ),
             None,
         )
