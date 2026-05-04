@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from work_diary_mcp.config import get_data_dir
-from work_diary_mcp.jira import linkify_jira_refs
+from work_diary_mcp.jira import linkify_jira_refs, strip_markdown_links
 from work_diary_mcp.roles import format_role
 from work_diary_mcp.statuses import is_completed
 
@@ -968,6 +968,23 @@ def _project_index_out_of_range_error(
     )
 
 
+def _find_matching_project_key(state: DiaryState, project_ref: str) -> str | None:
+    """Case-insensitive match of *project_ref* against existing project keys.
+
+    First tries a direct comparison, then falls back to comparing against
+    de-linkified keys so bare references like ``"CAG-477 Foo"`` resolve to
+    linkified keys like ``"[CAG-477](https://...) Foo"``.
+    """
+    ref_lower = project_ref.lower()
+    for key in state["projects"]:
+        if key.lower() == ref_lower:
+            return key
+    for key in state["projects"]:
+        if strip_markdown_links(key).lower() == ref_lower:
+            return key
+    return None
+
+
 def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref: str) -> str:
     """Resolve a project reference to an existing project key.
 
@@ -979,10 +996,7 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
         ValueError: If the project reference is ambiguous, out of range, or
         does not resolve to an existing project.
     """
-    exact_match = next(
-        (key for key in state["projects"] if key.lower() == project_ref.lower()),
-        None,
-    )
+    exact_match = _find_matching_project_key(state, project_ref)
 
     row_index = _project_row_reference_index(project_ref)
     row_match: str | None = None
@@ -1029,10 +1043,7 @@ def _resolve_project_key_for_update(
         ValueError: If the project reference is ambiguous or if a row reference
         is non-positive, such as ``project 0``.
     """
-    exact_match = next(
-        (key for key in state["projects"] if key.lower() == project_ref.lower()),
-        None,
-    )
+    exact_match = _find_matching_project_key(state, project_ref)
     row_index = _project_row_reference_index(project_ref)
     project_keys = list(state["projects"].keys())
 
@@ -1118,9 +1129,24 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
 
         old_key = _resolve_existing_project_key(state, week_key, old_name)
 
-        # Prevent collisions with an existing different project
+        # Linkify the new name first so the collision check accounts for
+        # both the bare name and its linkified form.  This prevents a rename
+        # to a bare ticket reference (e.g. "PROJ-123 Phoenix") from silently
+        # overwriting an existing project stored under the linkified key
+        # (e.g. "[PROJ-123](https://...) Phoenix").
+        linked_new_name = linkify_jira_refs(new_name)
+
+        # Prevent collisions with an existing different project.  We check
+        # against the linkified form (covers exact key clashes) and also
+        # strip links from existing keys (covers bare-vs-linkified clashes).
+        other_keys = {k for k in state["projects"] if k != old_key}
         collision = next(
-            (k for k in state["projects"] if k.lower() == new_name.lower() and k != old_key),
+            (
+                k
+                for k in other_keys
+                if k.lower() == linked_new_name.lower()
+                or strip_markdown_links(k).lower() == new_name.lower()
+            ),
             None,
         )
         if collision is not None:
@@ -1130,7 +1156,6 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
             )
 
         # Rebuild dicts preserving insertion order, swapping the key in-place
-        linked_new_name = linkify_jira_refs(new_name)
         state["projects"] = {
             (linked_new_name if k == old_key else k): v for k, v in state["projects"].items()
         }

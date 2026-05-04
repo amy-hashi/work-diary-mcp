@@ -44,6 +44,14 @@ def _compile_bare_ticket_re(prefixes: tuple[str, ...]) -> re.Pattern[str]:
 # --------------------------------------------------------------------------- #
 
 
+def strip_markdown_links(text: str) -> str:
+    """Replace Markdown links with just their label text.
+
+    ``[PROJ-123](https://...)`` becomes ``PROJ-123``.
+    """
+    return _MARKDOWN_LINK_RE.sub(r"\1", text)
+
+
 def linkify_jira_refs(text: str) -> str:
     """Replace bare Jira ticket references in *text* with Markdown links.
 
