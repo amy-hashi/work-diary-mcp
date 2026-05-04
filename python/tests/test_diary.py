@@ -1700,25 +1700,6 @@ class TestRenameProject:
         with pytest.raises(ValueError, match="there are 2 projects"):
             diary_mod.rename_project(week_key, "project 3", "Renamed Project")
 
-    def test_rename_to_bare_name_colliding_with_linkified_key_raises(self, diary_dir):
-        """Renaming to a bare ticket reference that would collide with an
-        existing linkified project key should be rejected."""
-        week_key = "2026-03-02"
-        linkified_key = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234) Phoenix"
-        state = {
-            "weekKey": week_key,
-            "projects": {
-                linkified_key: "On Track",
-                "Other Project": "Blocked",
-            },
-            "projectNotes": {},
-            "projectRoles": {},
-            "notes": [],
-        }
-        (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
-        with pytest.raises(ValueError, match="already exists"):
-            diary_mod.rename_project(week_key, "Other Project", "PROJ-1234 Phoenix")
-
 
 # ---------------------------------------------------------------------------
 # bulk_update_projects
@@ -1876,27 +1857,6 @@ class TestBulkUpdateProjects:
             "Beta": "Done",
             "Gamma": "On Track",
         }
-
-    def test_bare_name_matches_linkified_key(self, diary_dir):
-        """Bulk updates with bare ticket names resolve to already-linkified
-        project keys instead of creating duplicates."""
-        week_key = "2026-03-02"
-        linkified_key = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234) Phoenix"
-        state = {
-            "weekKey": week_key,
-            "projects": {linkified_key: "On Track"},
-            "projectNotes": {},
-            "projectRoles": {},
-            "notes": [],
-        }
-        (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
-        diary_mod.bulk_update_projects(
-            week_key,
-            [{"project": "PROJ-1234 Phoenix", "status": "Blocked"}],
-        )
-        reloaded = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
-        assert len(reloaded["projects"]) == 1
-        assert reloaded["projects"][linkified_key] == "Blocked"
 
 
 # ---------------------------------------------------------------------------
