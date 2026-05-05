@@ -1554,6 +1554,64 @@ class TestUpdateProjectStatus:
         state = json.loads((diary_dir / f"{week_key}.json").read_text())
         assert state["projectNotes"]["Alpha"] == "keep me"
 
+    def test_bare_name_matches_linkified_key(self, diary_dir):
+        """A bare ticket reference resolves to an already-linkified project key
+        instead of creating a duplicate with a potentially different URL."""
+        week_key = "2026-03-02"
+        # Simulate a project carried forward with a linkified key.
+        linkified_key = "[PROJ-1234](https://jira.example.com/browse/PROJ-1234) Phoenix"
+        state = {
+            "weekKey": week_key,
+            "projects": {linkified_key: "On Track"},
+            "projectNotes": {},
+            "projectRoles": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
+        # Update using the bare (de-linkified) name.
+        diary_mod.update_project_status(week_key, "PROJ-1234 Phoenix", "Blocked")
+        reloaded = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+        # Should update the existing key, not create a duplicate.
+        assert len(reloaded["projects"]) == 1
+        assert reloaded["projects"][linkified_key] == "Blocked"
+
+    def test_linkified_ref_with_different_url_matches_existing_key(self, diary_dir):
+        """A pre-linkified reference whose URL differs from the stored key
+        resolves to the existing project instead of creating a duplicate."""
+        week_key = "2026-03-02"
+        stored_key = "[PROJ-1234](https://old-jira.example.com/browse/PROJ-1234) Phoenix"
+        state = {
+            "weekKey": week_key,
+            "projects": {stored_key: "On Track"},
+            "projectNotes": {},
+            "projectRoles": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
+        # Update using a linkified name with a different URL.
+        different_url_ref = "[PROJ-1234](https://new-jira.example.com/browse/PROJ-1234) Phoenix"
+        diary_mod.update_project_status(week_key, different_url_ref, "Blocked")
+        reloaded = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
+        assert len(reloaded["projects"]) == 1
+        assert reloaded["projects"][stored_key] == "Blocked"
+
+    def test_ambiguous_delinkified_duplicates_raises(self, diary_dir):
+        """When multiple stored keys de-linkify to the same bare name (left
+        over from the prior duplication bug), an ambiguity error is raised."""
+        week_key = "2026-03-02"
+        key_a = "[PROJ-1234](https://old-url/PROJ-1234) Phoenix"
+        key_b = "[PROJ-1234](https://new-url/PROJ-1234) Phoenix"
+        state = {
+            "weekKey": week_key,
+            "projects": {key_a: "On Track", key_b: "Blocked"},
+            "projectNotes": {},
+            "projectRoles": {},
+            "notes": [],
+        }
+        (diary_dir / f"{week_key}.json").write_text(json.dumps(state), encoding="utf-8")
+        with pytest.raises(ValueError, match="ambiguous"):
+            diary_mod.update_project_status(week_key, "PROJ-1234 Phoenix", "Done")
+
 
 # ---------------------------------------------------------------------------
 # rename_project
@@ -2179,6 +2237,16 @@ class TestMarkdownRendering:
 
 
 class TestLinkifyJiraRefs:
+    def test_strip_markdown_links(self):
+        from work_diary_mcp.jira import strip_markdown_links
+
+        assert (
+            strip_markdown_links("[PROJ-1234](https://jira.example.com/browse/PROJ-1234) Phoenix")
+            == "PROJ-1234 Phoenix"
+        )
+        assert strip_markdown_links("no links here") == "no links here"
+        assert strip_markdown_links("see [A](https://a) and [B](https://b)") == "see A and B"
+
     def test_bare_ticket_becomes_link(self):
         from work_diary_mcp.jira import linkify_jira_refs
 

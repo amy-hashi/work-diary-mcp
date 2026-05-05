@@ -13,6 +13,9 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - New `projectRoles` field on the persisted diary state, validated and migrated alongside `projects` and `projectNotes`. Legacy diary files without this field load cleanly with an empty role map. Roles are re-keyed in lockstep with project keys during Jira linkification migrations.
 - Carry-forward now propagates roles for non-terminal projects from the most recent prior week, alongside the projects themselves.
 
+### Fixed
+- Project resolution now matches bare ticket references (e.g. `CAG-477 TFE Zero Down Time`) against already-linkified project keys (e.g. `[CAG-477](https://...) TFE Zero Down Time`), preventing duplicate entries when the Jira base URL changes or when a user supplies a bare name for an already-linked project.
+
 ## [0.3.0] - 2026-04-28
 
 ### Added

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from work_diary_mcp.config import get_data_dir
-from work_diary_mcp.jira import linkify_jira_refs
+from work_diary_mcp.jira import linkify_jira_refs, strip_markdown_links
 from work_diary_mcp.roles import format_role
 from work_diary_mcp.statuses import is_completed
 
@@ -968,6 +968,49 @@ def _project_index_out_of_range_error(
     )
 
 
+def _find_matching_project_key(state: DiaryState, project_ref: str) -> str | None:
+    """Case-insensitive match of *project_ref* against existing project keys.
+
+    Tries, in order:
+
+    1. Direct case-insensitive comparison.
+    2. De-linkified stored keys vs. the raw *project_ref*.
+    3. De-linkified stored keys vs. de-linkified *project_ref* (handles the
+       case where the caller passes a pre-linkified reference whose URL
+       differs from the stored key).
+
+    If the de-linkified fallback (steps 2–3) finds more than one distinct
+    match, a ``ValueError`` is raised so callers surface an explicit
+    ambiguity error instead of silently picking an arbitrary key.
+    """
+    ref_lower = project_ref.lower()
+    # 1. Direct match — fast path, no ambiguity possible.
+    for key in state["projects"]:
+        if key.lower() == ref_lower:
+            return key
+
+    # 2–3. De-linkified fallback.  Collect all distinct matches so we can
+    # detect ambiguity when the prior duplication bug left multiple keys
+    # that de-linkify to the same bare name.
+    stripped_ref_lower = strip_markdown_links(project_ref).lower()
+    matches: list[str] = []
+    for key in state["projects"]:
+        stripped_key = strip_markdown_links(key).lower()
+        if stripped_key == ref_lower or stripped_key == stripped_ref_lower:
+            matches.append(key)
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = ", ".join(f'"{m}"' for m in matches)
+        raise ValueError(
+            f'Project reference "{project_ref}" is ambiguous — it matches '
+            f"multiple existing projects: {names}. Please use the exact "
+            f"project name or a row reference (e.g. 'project 2') to clarify."
+        )
+    return None
+
+
 def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref: str) -> str:
     """Resolve a project reference to an existing project key.
 
@@ -979,10 +1022,7 @@ def _resolve_existing_project_key(state: DiaryState, week_key: str, project_ref:
         ValueError: If the project reference is ambiguous, out of range, or
         does not resolve to an existing project.
     """
-    exact_match = next(
-        (key for key in state["projects"] if key.lower() == project_ref.lower()),
-        None,
-    )
+    exact_match = _find_matching_project_key(state, project_ref)
 
     row_index = _project_row_reference_index(project_ref)
     row_match: str | None = None
@@ -1029,10 +1069,7 @@ def _resolve_project_key_for_update(
         ValueError: If the project reference is ambiguous or if a row reference
         is non-positive, such as ``project 0``.
     """
-    exact_match = next(
-        (key for key in state["projects"] if key.lower() == project_ref.lower()),
-        None,
-    )
+    exact_match = _find_matching_project_key(state, project_ref)
     row_index = _project_row_reference_index(project_ref)
     project_keys = list(state["projects"].keys())
 
@@ -1118,9 +1155,30 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
 
         old_key = _resolve_existing_project_key(state, week_key, old_name)
 
-        # Prevent collisions with an existing different project
+        # Linkify the new name first so the collision check accounts for
+        # both the bare name and its linkified form.  This prevents a rename
+        # to a bare ticket reference (e.g. "PROJ-123 Phoenix") from silently
+        # overwriting an existing project stored under the linkified key
+        # (e.g. "[PROJ-123](https://...) Phoenix").
+        linked_new_name = linkify_jira_refs(new_name)
+
+        # Prevent collisions with an existing different project.  We check
+        # against the linkified form (covers exact key clashes) and also
+        # strip links from both sides (covers bare-vs-linkified and
+        # linkified-with-different-URL clashes).  Iterate over the original
+        # dict keys (not a set) to preserve insertion order so the collision
+        # reported in the error message is deterministic.
+        stripped_new_lower = strip_markdown_links(linked_new_name).lower()
         collision = next(
-            (k for k in state["projects"] if k.lower() == new_name.lower() and k != old_key),
+            (
+                k
+                for k in state["projects"]
+                if k != old_key
+                and (
+                    k.lower() == linked_new_name.lower()
+                    or strip_markdown_links(k).lower() == stripped_new_lower
+                )
+            ),
             None,
         )
         if collision is not None:
@@ -1130,7 +1188,6 @@ def rename_project(week_key: str, old_name: str, new_name: str) -> None:
             )
 
         # Rebuild dicts preserving insertion order, swapping the key in-place
-        linked_new_name = linkify_jira_refs(new_name)
         state["projects"] = {
             (linked_new_name if k == old_key else k): v for k, v in state["projects"].items()
         }
