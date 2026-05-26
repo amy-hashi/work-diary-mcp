@@ -803,6 +803,35 @@ def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
     return {"projects": projects, "projectNotes": {}, "projectRoles": project_roles}
 
 
+def _get_carry_forward_reminders(
+    target_week_key: str,
+    state: ReminderState | None = None,
+) -> list[ReminderEntry]:
+    """Return uncompleted reminders from the most recent prior week.
+
+    Completed reminders are excluded. Due dates are dropped because they
+    are week-specific context that is unlikely to remain meaningful once
+    carried into a new week.
+
+    *state* may be supplied to avoid a redundant ``_load_reminder_state``
+    call when the caller already holds a loaded snapshot. When ``None``,
+    the state is loaded internally.
+
+    Must be called while holding ``_reminder_lock``.
+    """
+    if state is None:
+        state = _load_reminder_state()
+    prior_weeks = sorted(wk for wk in state["reminders"] if wk < target_week_key)
+    if not prior_weeks:
+        return []
+    last_week = prior_weeks[-1]
+    return [
+        {"content": r["content"], "completed": False}
+        for r in state["reminders"][last_week]
+        if not r.get("completed", False)
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
@@ -859,8 +888,9 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
 
     Returns a dict with keys: week_key, week_label, is_new.
     When *carry_forward* is True, newly created pages inherit non-completed
-    projects from the most recent prior week. When False, newly created pages
-    start empty.
+    projects from the most recent prior week and uncompleted reminders are
+    copied into the new week's reminder list. When False, newly created
+    pages start empty.
 
     Uses an in-process cache keyed by ``(today, week_key)`` so repeated tool
     calls within the same day skip the lock acquisition and existence
@@ -893,6 +923,21 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
                 if carry_forward
                 else {"projects": {}, "projectNotes": {}, "projectRoles": {}}
             )
+
+            # Carry forward uncompleted reminders from the prior week.
+            # We already hold the reminder lock via _week_write, so it
+            # is safe to read/write reminder state here.
+            if carry_forward:
+                reminder_state = _load_reminder_state()
+                carried_reminders = _get_carry_forward_reminders(week_key, state=reminder_state)
+                if carried_reminders:
+                    existing = list(reminder_state["reminders"].get(week_key, []))
+                    reminder_state["reminders"][week_key] = existing + carried_reminders
+                    # Save without refresh_week_keys — we are about to
+                    # save the week state ourselves below.
+                    _save_reminder_state(reminder_state)
+                    reminders = existing + carried_reminders
+
             _save_state(
                 {
                     "weekKey": week_key,
@@ -928,6 +973,7 @@ def get_or_create_week_page() -> dict:
     On first call of the week, projects are carried forward from the prior week,
     excluding any projects with a completed status (Done, Completed, Cancelled, etc.).
     Roles assigned to non-completed projects are carried forward alongside them.
+    Uncompleted reminders from the prior week are also copied into the new week.
     """
     return _ensure_week_page(get_week_key(), carry_forward=True)
 
