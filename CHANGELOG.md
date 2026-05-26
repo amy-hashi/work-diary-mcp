@@ -7,6 +7,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ## [Unreleased]
 
 ### Added
+- **Reminder carry-forward**: uncompleted reminders from the most recent prior week are now automatically copied into a new week when its diary page is first created. Completed reminders and week-specific due dates are excluded from carry-forward. Existing reminders already scheduled for the new week are preserved alongside the carried-forward entries.
 - Project **roles** describing the engagement mode an engineer is taking on a project, inspired by the Principal Engineer role framework: 🚀 Sponsor, 🗺️ Guide, 🧯 Catcher, 🧭 Advisor, 🧪 Catalyst, 🙋 Participant. Roles render in a new `Role` column (positioned second, after the project name) in the weekly diary's project status table.
 - New `set_project_role` MCP tool that sets or clears the role for an existing project. Accepts canonical role names (case-insensitive), emoji shortcodes (`:rocket:`, `:world_map:`, `:fire_extinguisher:`, `:compass:`, `:test_tube:`, `:raising_hand:`), bare emoji, and already-formatted display values; pass an empty string to clear.
 - Optional `role` parameter on `update_project_status` and `bulk_update_projects` so a project's role can be set or cleared in the same call as its status. Passing `null` (the default) leaves any existing role untouched; passing an empty string clears it.
