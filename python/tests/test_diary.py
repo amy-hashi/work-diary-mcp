@@ -1336,6 +1336,151 @@ class TestCarryForward:
         assert list(result["projects"].keys()) == ["NewProject"]
 
 
+class TestReminderCarryForward:
+    def test_no_prior_reminders_returns_empty(self, diary_dir):
+        result = diary_mod._get_carry_forward_reminders("2026-03-09")
+        assert result == []
+
+    def test_carries_uncompleted_reminders(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "Follow up with the perf team.")
+        diary_mod.add_reminder(week_key, "Read the RFC.")
+
+        result = diary_mod._get_carry_forward_reminders("2026-03-09")
+        assert len(result) == 2
+        assert result[0]["content"] == "Follow up with the perf team."
+        assert result[0]["completed"] is False
+        assert result[1]["content"] == "Read the RFC."
+        assert result[1]["completed"] is False
+
+    def test_excludes_completed_reminders(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "Done task.")
+        diary_mod.add_reminder(week_key, "Still open.")
+        diary_mod.set_reminder_completed(week_key, 1, True)
+
+        result = diary_mod._get_carry_forward_reminders("2026-03-09")
+        assert len(result) == 1
+        assert result[0]["content"] == "Still open."
+
+    def test_drops_due_date_on_carry_forward(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.add_reminder(week_key, "Time-sensitive task.", due_date="Thursday")
+
+        result = diary_mod._get_carry_forward_reminders("2026-03-09")
+        assert len(result) == 1
+        assert "dueDate" not in result[0]
+
+    def test_uses_most_recent_prior_week(self, diary_dir):
+        diary_mod.add_reminder("2026-02-16", "Old reminder.")
+        diary_mod.add_reminder("2026-03-02", "Recent reminder.")
+
+        result = diary_mod._get_carry_forward_reminders("2026-03-09")
+        assert len(result) == 1
+        assert result[0]["content"] == "Recent reminder."
+
+    def test_ensure_week_page_carries_reminders_forward(self, diary_dir):
+        prior_week = "2026-03-02"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+        diary_mod.add_reminder(prior_week, "Uncompleted task.")
+        diary_mod.add_reminder(prior_week, "Completed task.")
+        diary_mod.set_reminder_completed(prior_week, 2, True)
+
+        new_week = "2026-03-09"
+        diary_mod._ensure_week_page(new_week, carry_forward=True)
+
+        reminders = diary_mod.list_reminders(new_week)
+        assert len(reminders) == 1
+        assert reminders[0]["content"] == "Uncompleted task."
+        assert reminders[0]["completed"] is False
+
+    def test_ensure_week_page_no_carry_forward_for_historical(self, diary_dir):
+        prior_week = "2026-03-02"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+        diary_mod.add_reminder(prior_week, "Should not carry.")
+
+        new_week = "2026-03-09"
+        diary_mod._ensure_week_page(new_week, carry_forward=False)
+
+        reminders = diary_mod.list_reminders(new_week)
+        assert reminders == []
+
+    def test_carried_reminders_appear_in_rendered_markdown(self, diary_dir):
+        prior_week = "2026-03-02"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+        diary_mod.add_reminder(prior_week, "Read the doc.")
+
+        new_week = "2026-03-09"
+        diary_mod._ensure_week_page(new_week, carry_forward=True)
+
+        markdown = diary_mod.get_diary_markdown(new_week)
+        assert "- [ ] Read the doc." in markdown
+
+    def test_preserves_existing_reminders_on_new_week(self, diary_dir):
+        prior_week = "2026-03-02"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+        diary_mod.add_reminder(prior_week, "Carried reminder.")
+
+        new_week = "2026-03-09"
+        # Pre-add a reminder for the new week before the page is created
+        diary_mod.add_reminder(new_week, "Already scheduled.")
+
+        diary_mod._ensure_week_page(new_week, carry_forward=True)
+
+        reminders = diary_mod.list_reminders(new_week)
+        assert len(reminders) == 2
+        contents = [r["content"] for r in reminders]
+        assert "Already scheduled." in contents
+        assert "Carried reminder." in contents
+
+    def test_second_ensure_week_page_does_not_duplicate_carried_reminders(self, diary_dir):
+        prior_week = "2026-03-02"
+        prior_state = {
+            "weekKey": prior_week,
+            "projects": {"Alpha": "On Track"},
+            "projectNotes": {},
+            "notes": [],
+        }
+        (diary_dir / f"{prior_week}.json").write_text(json.dumps(prior_state), encoding="utf-8")
+        diary_mod.add_reminder(prior_week, "Carry me once.")
+
+        new_week = "2026-03-09"
+        diary_mod._ensure_week_page(new_week, carry_forward=True)
+
+        # Evict the ensured-pages cache so the second call enters the
+        # _week_write block again, but sees the diary file already exists.
+        diary_mod._ENSURED_PAGES.clear()
+        diary_mod._ensure_week_page(new_week, carry_forward=True)
+
+        reminders = diary_mod.list_reminders(new_week)
+        assert len(reminders) == 1
+        assert reminders[0]["content"] == "Carry me once."
+
+
 # ---------------------------------------------------------------------------
 # get_diary_markdown / list_projects
 # ---------------------------------------------------------------------------

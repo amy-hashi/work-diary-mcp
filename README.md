@@ -249,7 +249,7 @@ Reopen reminder 1 for next week
 - **Project status table** — track projects with a status, an optional inline note, and an optional engagement role per project
 - **Engagement roles** — tag each project with a Principal Engineer–style engagement role (Sponsor, Guide, Catcher, Advisor, Catalyst, Participant) rendered with emoji in a dedicated `Role` column. Roles are carried forward week-over-week alongside the project itself.
 - **General notes** — append notes throughout the week
-- **Carry-forward** — on the first interaction of each new week, non-completed projects are automatically carried forward from the prior week, while project notes reset for the new week
+- **Carry-forward** — on the first interaction of each new week, non-completed projects and uncompleted reminders are automatically carried forward from the prior week, while project notes reset for the new week
 - **Jira auto-linking** — bare Jira ticket references (for supported prefixes such as `PROJ-1234` or `INFRA-5678`) are automatically converted to Markdown links
 - **Markdown links** — use standard Markdown link syntax anywhere: `[text](url)`
 - **Relative date support** — target weeks with ISO dates and natural language such as `"last week"`, `"next week"`, `"2 weeks ago"`, `"2 weeks from now"`, or `"in 4 weeks"`
@@ -410,6 +410,7 @@ Carry-forward behavior is currently:
 - **Project inline notes are not carried forward**
 - **General notes are not carried forward**
 - **Completed or cancelled projects are not carried forward**
+- **Uncompleted reminders are carried forward from the prior week** (due dates are dropped since they are week-specific)
 - **Reminders for that week are rendered in the new diary page without creating future diary pages ahead of time**
 - **When reminders change for an existing week, that week's persisted Markdown is regenerated**
 
