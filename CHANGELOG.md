@@ -6,6 +6,8 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-01
+
 ### Added
 - **Reminder carry-forward**: uncompleted reminders from the most recent prior week are now automatically copied into a new week when its diary page is first created. Completed reminders and week-specific due dates are excluded from carry-forward. Existing reminders already scheduled for the new week are preserved alongside the carried-forward entries.
 - Project **roles** describing the engagement mode an engineer is taking on a project, inspired by the Principal Engineer role framework: 🚀 Sponsor, 🗺️ Guide, 🧯 Catcher, 🧭 Advisor, 🧪 Catalyst, 🙋 Participant. Roles render in a new `Role` column (positioned second, after the project name) in the weekly diary's project status table.
@@ -15,7 +17,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - Carry-forward now propagates roles for non-terminal projects from the most recent prior week, alongside the projects themselves.
 
 ### Fixed
-- Project resolution now matches bare ticket references (e.g. `CAG-477 TFE Zero Down Time`) against already-linkified project keys (e.g. `[CAG-477](https://...) TFE Zero Down Time`), preventing duplicate entries when the Jira base URL changes or when a user supplies a bare name for an already-linked project.
+- Project resolution now matches bare ticket references (e.g. `PROJ-123 Migration Project`) against already-linkified project keys (e.g. `[PROJ-123](https://...) Migration Project`), preventing duplicate entries when the Jira base URL changes or when a user supplies a bare name for an already-linked project.
 
 ## [0.3.0] - 2026-04-28
 
