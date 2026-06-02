@@ -533,7 +533,7 @@ def list_weeks() -> str:
         raise ToolError(str(e)) from e
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
 def push_diary_to_sync_folder(
     date: Annotated[str | None, _DATE_HELP_TEXT] = None,
 ) -> str:
@@ -553,8 +553,9 @@ def push_diary_to_sync_folder(
     if sync_path is None:
         raise ToolError(
             "No sync folder configured. "
-            "Set WORK_DIARY_SYNC_PATH (environment variable or settings file key) "
-            "to the path of a cloud-synced folder such as Box Drive, OneDrive, "
+            "Set the WORK_DIARY_SYNC_PATH environment variable or the "
+            "sync_path key in the settings file to the path of a "
+            "cloud-synced folder such as Box Drive, OneDrive, "
             "iCloud Drive, or Dropbox."
         )
 
@@ -571,6 +572,11 @@ def push_diary_to_sync_folder(
                 f"Markdown file for {week_label} could not be found after page creation."
             )
 
+        if sync_path.exists() and not sync_path.is_dir():
+            raise ToolError(
+                f"Configured sync path `{sync_path}` exists but is not a directory. "
+                "Check your WORK_DIARY_SYNC_PATH or sync_path setting."
+            )
         sync_path.mkdir(parents=True, exist_ok=True)
         dest = sync_path / f"{week_key}.md"
         dest.write_bytes(md_path.read_bytes())
