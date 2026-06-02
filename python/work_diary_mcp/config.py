@@ -251,8 +251,9 @@ def get_auto_sync() -> bool:
 
     Resolution order (first match wins):
 
-    1. ``WORK_DIARY_AUTO_SYNC`` environment variable
-       (truthy: ``"1"``, ``"true"``, ``"yes"``, ``"on"``; all other values -> False)
+    1. ``WORK_DIARY_AUTO_SYNC`` environment variable — empty or whitespace-only
+       values are treated as unset, allowing the settings file to apply.
+       (truthy: ``"1"``, ``"true"``, ``"yes"``, ``"on"``; all other non-empty values -> False)
     2. ``auto_sync`` key in the platform-native settings file (must be a boolean)
     3. ``False`` (default -- opt-in)
 
@@ -261,9 +262,7 @@ def get_auto_sync() -> bool:
             not a boolean.
     """
     raw_env = os.environ.get(AUTO_SYNC_ENV)
-    if raw_env is not None:
-        # An empty string is treated as falsy but still takes precedence over
-        # the settings file, consistent with the behaviour of other env vars.
+    if raw_env:
         return raw_env.strip().lower() in {"1", "true", "yes", "on"}
 
     if SETTINGS_FILE.exists():
