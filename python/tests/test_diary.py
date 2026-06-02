@@ -369,6 +369,35 @@ class TestAtomicWriteText:
         else:
             assert mode == 0o600
 
+    def test_utf8_sig_encoding_writes_bom(self, diary_dir):
+        target = diary_dir / "bom-test.txt"
+
+        diary_mod._atomic_write_text(target, "hello 🚀", encoding="utf-8-sig")
+
+        raw_bytes = target.read_bytes()
+        assert raw_bytes[:3] == b"\xef\xbb\xbf", "Expected UTF-8 BOM at start of file"
+        assert target.read_text(encoding="utf-8-sig") == "hello 🚀"
+
+    def test_markdown_file_written_with_bom(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+
+        md_path = diary_dir / f"{week_key}.md"
+        raw_bytes = md_path.read_bytes()
+        assert raw_bytes[:3] == b"\xef\xbb\xbf", "Markdown file should start with UTF-8 BOM"
+
+    def test_json_files_written_without_bom(self, diary_dir):
+        week_key = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_reminder(week_key, "A reminder.")
+
+        json_path = diary_dir / f"{week_key}.json"
+        reminders_path = diary_dir / "reminders.json"
+        assert json_path.read_bytes()[:3] != b"\xef\xbb\xbf", "Diary JSON must not have a UTF-8 BOM"
+        assert reminders_path.read_bytes()[:3] != b"\xef\xbb\xbf", (
+            "reminders.json must not have a UTF-8 BOM"
+        )
+
 
 class TestWeekLock:
     def test_windows_lock_file_does_not_grow_on_repeated_acquire(self, diary_dir, monkeypatch):
@@ -975,7 +1004,7 @@ class TestReminders:
 
         diary_mod.add_reminder(week_key, "Follow up with the perf team.", due_date="2026-03-27")
 
-        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8-sig")
         assert "## Reminders for this week" in markdown
         assert "- [ ] Due Date: 2026-03-27 Follow up with the perf team." in markdown
         assert "*(no reminders for this week)*" not in markdown
@@ -987,7 +1016,7 @@ class TestReminders:
 
         diary_mod.set_reminder_completed(week_key, 1, True)
 
-        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8-sig")
         assert "- [x] Confirm rollout checklist." in markdown
         assert "*(no reminders for this week)*" not in markdown
 
@@ -1002,7 +1031,7 @@ class TestReminders:
         diary_mod.add_reminder(week_key, "Follow up with the perf team.")
 
         state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
-        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8-sig")
 
         assert state == original_state
         assert "- [ ] Follow up with the perf team." in markdown
@@ -1020,7 +1049,7 @@ class TestReminders:
         diary_mod.set_reminder_completed(week_key, 1, True)
 
         state = json.loads((diary_dir / f"{week_key}.json").read_text(encoding="utf-8"))
-        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8")
+        markdown = (diary_dir / f"{week_key}.md").read_text(encoding="utf-8-sig")
 
         assert state == original_state
         assert "- [x] Confirm rollout checklist." in markdown
@@ -1033,13 +1062,13 @@ class TestReminders:
         diary_mod.get_or_create_page_for_week(first_week)
         diary_mod.get_or_create_page_for_week(second_week)
 
-        original_first_markdown = (diary_dir / f"{first_week}.md").read_text(encoding="utf-8")
-        original_second_markdown = (diary_dir / f"{second_week}.md").read_text(encoding="utf-8")
+        original_first_markdown = (diary_dir / f"{first_week}.md").read_text(encoding="utf-8-sig")
+        original_second_markdown = (diary_dir / f"{second_week}.md").read_text(encoding="utf-8-sig")
 
         diary_mod.add_reminder(second_week, "Follow up with the perf team.")
 
-        updated_first_markdown = (diary_dir / f"{first_week}.md").read_text(encoding="utf-8")
-        updated_second_markdown = (diary_dir / f"{second_week}.md").read_text(encoding="utf-8")
+        updated_first_markdown = (diary_dir / f"{first_week}.md").read_text(encoding="utf-8-sig")
+        updated_second_markdown = (diary_dir / f"{second_week}.md").read_text(encoding="utf-8-sig")
 
         assert updated_first_markdown == original_first_markdown
         assert updated_second_markdown != original_second_markdown
