@@ -6,6 +6,9 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ## [Unreleased]
 
+### Fixed
+- Persisted Markdown diary files (`.md`) are now written with a UTF-8 BOM (`utf-8-sig` encoding) so that applications which do not auto-detect encoding (e.g. Box Notes) render emoji and other non-ASCII characters correctly. JSON files (`*.json`, `reminders.json`) continue to be written without a BOM, as required by the JSON standard.
+
 ## [0.4.0] - 2026-06-01
 
 ### Added

@@ -486,7 +486,7 @@ def _cache_reminder_state(path: Path, state: ReminderState) -> None:
             _REMINDER_STATE_CACHE.popitem(last=False)
 
 
-def _atomic_write_text(path: Path, content: str) -> None:
+def _atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
     """Atomically write text content to *path*.
 
     Uses a tempfile + rename for application-level atomicity. We do not
@@ -494,6 +494,12 @@ def _atomic_write_text(path: Path, content: str) -> None:
     the rename already protects against partial writes for the failure
     modes we actually care about (process crash, concurrent reads). The
     fsync was previously the dominant per-call latency on macOS APFS.
+
+    *encoding* defaults to ``utf-8``. Pass ``utf-8-sig`` for files that
+    should include a UTF-8 BOM so that applications which do not
+    auto-detect encoding (e.g. Box Notes) render non-ASCII characters
+    correctly. JSON files must use the default ``utf-8`` because the
+    standard JSON parser does not strip BOMs.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     existing_mode = path.stat().st_mode if path.exists() else None
@@ -502,7 +508,7 @@ def _atomic_write_text(path: Path, content: str) -> None:
     try:
         if existing_mode is not None and hasattr(os, "fchmod"):
             os.fchmod(fd, existing_mode & 0o777)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding=encoding) as fh:
             fh.write(content)
         temp_path.replace(path)
     finally:
@@ -740,7 +746,7 @@ def _save_state(state: DiaryState, reminders: list[ReminderEntry]) -> None:
 
     diary_path = _diary_path(week_key)
     _atomic_write_text(diary_path, json_content)
-    _atomic_write_text(_markdown_path(week_key), markdown_content)
+    _atomic_write_text(_markdown_path(week_key), markdown_content, encoding="utf-8-sig")
     _cache_state(diary_path, migrated)
 
 
