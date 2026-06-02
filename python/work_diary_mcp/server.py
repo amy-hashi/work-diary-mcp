@@ -146,9 +146,12 @@ def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
         if existing_mode is not None and hasattr(os, "fchmod"):
             os.fchmod(fd, existing_mode & 0o777)
         with os.fdopen(fd, "w", encoding="utf-8-sig") as fh:
+            fd = -1  # fdopen took ownership; don't close in finally
             fh.write(content)
         temp_path.replace(dest)
     finally:
+        if fd != -1:
+            os.close(fd)
         temp_path.unlink(missing_ok=True)
     return dest
 
