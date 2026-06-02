@@ -125,8 +125,7 @@ def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
     Raises ValueError if *sync_path* or the destination file path conflict with
     an existing non-directory / non-file node.
     """
-    content = get_diary_markdown(week_key)
-
+    # Validate paths before rendering to fail fast on config errors.
     if sync_path.exists() and not sync_path.is_dir():
         raise ValueError(
             f"Configured sync path `{sync_path}` exists but is not a directory. "
@@ -138,6 +137,8 @@ def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
         raise ValueError(
             f"Destination path `{dest}` exists but is not a file. Remove it manually and try again."
         )
+
+    content = get_diary_markdown(week_key)
     fd, temp_path_str = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     temp_path = Path(temp_path_str)
     try:
