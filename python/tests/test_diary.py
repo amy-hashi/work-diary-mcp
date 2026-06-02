@@ -1074,7 +1074,8 @@ class TestSyncPathConfig:
         result = config_mod.get_sync_path()
         assert result is not None
         assert "~" not in str(result)
-        assert "Box/Work Diary" in str(result)
+        assert result.parent.name == "Box"
+        assert result.name == "Work Diary"
 
     def test_tilde_expanded_in_settings_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         import work_diary_mcp.config as config_mod
