@@ -261,9 +261,9 @@ def get_auto_sync() -> bool:
         TypeError: If ``auto_sync`` is present in the settings file but is
             not a boolean.
     """
-    raw_env = os.environ.get(AUTO_SYNC_ENV)
+    raw_env = os.environ.get(AUTO_SYNC_ENV, "").strip()
     if raw_env:
-        return raw_env.strip().lower() in {"1", "true", "yes", "on"}
+        return raw_env.lower() in {"1", "true", "yes", "on"}
 
     if SETTINGS_FILE.exists():
         data = _load_settings_data(SETTINGS_FILE)
