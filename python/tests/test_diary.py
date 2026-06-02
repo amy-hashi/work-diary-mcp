@@ -386,13 +386,17 @@ class TestAtomicWriteText:
         raw_bytes = md_path.read_bytes()
         assert raw_bytes[:3] == b"\xef\xbb\xbf", "Markdown file should start with UTF-8 BOM"
 
-    def test_json_file_written_without_bom(self, diary_dir):
+    def test_json_files_written_without_bom(self, diary_dir):
         week_key = "2026-03-02"
         diary_mod.get_or_create_page_for_week(week_key)
+        diary_mod.add_reminder(week_key, "A reminder.")
 
         json_path = diary_dir / f"{week_key}.json"
-        raw_bytes = json_path.read_bytes()
-        assert raw_bytes[:3] != b"\xef\xbb\xbf", "JSON file must not have a UTF-8 BOM"
+        reminders_path = diary_dir / "reminders.json"
+        assert json_path.read_bytes()[:3] != b"\xef\xbb\xbf", "Diary JSON must not have a UTF-8 BOM"
+        assert reminders_path.read_bytes()[:3] != b"\xef\xbb\xbf", (
+            "reminders.json must not have a UTF-8 BOM"
+        )
 
 
 class TestWeekLock:
