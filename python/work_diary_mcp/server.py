@@ -125,7 +125,7 @@ def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
     Raises ValueError if *sync_path* or the destination file path conflict with
     an existing non-directory / non-file node.
     """
-    content = get_diary_markdown(week_key).encode("utf-8-sig")
+    content = get_diary_markdown(week_key)
 
     if sync_path.exists() and not sync_path.is_dir():
         raise ValueError(
@@ -141,7 +141,7 @@ def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
     fd, temp_path_str = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     temp_path = Path(temp_path_str)
     try:
-        with os.fdopen(fd, "wb") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8-sig") as fh:
             fh.write(content)
         temp_path.replace(dest)
     finally:
