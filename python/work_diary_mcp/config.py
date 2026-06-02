@@ -262,6 +262,8 @@ def get_auto_sync() -> bool:
     """
     raw_env = os.environ.get(AUTO_SYNC_ENV)
     if raw_env is not None:
+        # An empty string is treated as falsy but still takes precedence over
+        # the settings file, consistent with the behaviour of other env vars.
         return raw_env.strip().lower() in {"1", "true", "yes", "on"}
 
     if SETTINGS_FILE.exists():

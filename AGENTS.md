@@ -188,6 +188,8 @@ Maintain that organization when editing docs.
 - `WORK_DIARY_JIRA_BASE_URL`
 - `WORK_DIARY_JIRA_PREFIXES`
 - `WORK_DIARY_FILE_LOCKS` — opt-in flag (`1`/`true`/`yes`/`on`) that additionally acquires filesystem locks for week and reminder writes. Off by default; in-process `threading.Lock`s are used in the common single-process case.
+- `WORK_DIARY_SYNC_PATH` — path to a cloud-synced folder for `push_diary_to_sync_folder` and auto-sync.
+- `WORK_DIARY_AUTO_SYNC` — opt-in flag (`1`/`true`/`yes`/`on`) that automatically copies the affected week's diary to the sync folder after every write operation. Off by default.
 
 ### Settings file
 Platform-native settings file location:
@@ -198,6 +200,8 @@ Supported settings keys:
 - `data_dir`
 - `jira_base_url`
 - `jira_prefixes`
+- `sync_path` — path to a cloud-synced folder; supports `~` expansion
+- `auto_sync` — boolean; when `true`, every diary write copies the affected week to the sync folder
 
 ### Validation expectations
 - `jira_base_url` must be a non-empty URL with a scheme such as `https://`
