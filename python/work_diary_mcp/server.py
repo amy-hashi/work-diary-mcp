@@ -1,3 +1,6 @@
+import os
+import tempfile
+from pathlib import Path
 from typing import Annotated
 
 from fastmcp import FastMCP
@@ -549,17 +552,16 @@ def push_diary_to_sync_folder(
     """
     from work_diary_mcp.config import get_data_dir, get_sync_path
 
-    sync_path = get_sync_path()
-    if sync_path is None:
-        raise ToolError(
-            "No sync folder configured. "
-            "Set the WORK_DIARY_SYNC_PATH environment variable or the "
-            "sync_path key in the settings file to the path of a "
-            "cloud-synced folder such as Box Drive, OneDrive, "
-            "iCloud Drive, or Dropbox."
-        )
-
     try:
+        sync_path = get_sync_path()
+        if sync_path is None:
+            raise ToolError(
+                "No sync folder configured. "
+                "Set the WORK_DIARY_SYNC_PATH environment variable or the "
+                "sync_path key in the settings file to the path of a "
+                "cloud-synced folder such as Box Drive, OneDrive, "
+                "iCloud Drive, or Dropbox."
+            )
         week_key = parse_week_key(date) if date else get_week_key()
         week_label = get_week_label(week_key)
 
@@ -584,7 +586,17 @@ def push_diary_to_sync_folder(
                 f"Destination path `{dest}` exists but is not a file. "
                 "Remove it manually and try again."
             )
-        dest.write_bytes(md_path.read_bytes())
+        content = md_path.read_bytes()
+        fd, temp_path_str = tempfile.mkstemp(
+            dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp"
+        )
+        temp_path = Path(temp_path_str)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(content)
+            temp_path.replace(dest)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
         return f"Copied **{week_label}** diary to `{dest}`."
     except ToolError:
