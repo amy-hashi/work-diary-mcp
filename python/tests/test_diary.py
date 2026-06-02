@@ -34,11 +34,13 @@ def diary_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     import work_diary_mcp.config as config_mod
 
     config_mod.get_data_dir.cache_clear()
+    config_mod.get_sync_path.cache_clear()
     monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(tmp_path))
     diary_mod._reset_caches()
     yield tmp_path
     diary_mod._reset_caches()
     config_mod.get_data_dir.cache_clear()
+    config_mod.get_sync_path.cache_clear()
 
 
 def _week_key(d: date) -> str:
@@ -737,6 +739,110 @@ class TestServerWriteTools:
         assert diary_mod.get_week_label(target_week) in result
 
 
+class TestPushDiaryToSyncFolderTool:
+    def test_raises_tool_error_when_not_configured(
+        self, diary_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_sync_path.cache_clear()
+
+        from fastmcp.exceptions import ToolError
+
+        with pytest.raises(ToolError, match="No sync folder configured"):
+            server_mod.push_diary_to_sync_folder()
+
+    def test_copies_markdown_to_sync_folder(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "box" / "work-diary"
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_sync_path.cache_clear()
+
+        result = server_mod.push_diary_to_sync_folder()
+
+        week_key = diary_mod.get_week_key()
+        dest = sync_dir / f"{week_key}.md"
+        assert dest.exists()
+        assert dest.stat().st_size > 0
+        assert week_key in result
+
+    def test_creates_nested_sync_folder_if_missing(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "new" / "nested" / "folder"
+        assert not sync_dir.exists()
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_sync_path.cache_clear()
+
+        server_mod.push_diary_to_sync_folder()
+
+        assert sync_dir.is_dir()
+
+    def test_overwrites_existing_file(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "sync"
+        sync_dir.mkdir()
+        week_key = diary_mod.get_week_key()
+        existing = sync_dir / f"{week_key}.md"
+        existing.write_bytes(b"stale content")
+
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_sync_path.cache_clear()
+
+        server_mod.push_diary_to_sync_folder()
+
+        content = existing.read_bytes()
+        assert b"stale content" not in content
+        assert len(content) > 0
+
+    def test_copies_correct_bytes_including_bom(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The copied file should be byte-for-byte identical to the source .md file."""
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "sync"
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_sync_path.cache_clear()
+
+        server_mod.push_diary_to_sync_folder()
+
+        week_key = diary_mod.get_week_key()
+        source = diary_dir / f"{week_key}.md"
+        dest = sync_dir / f"{week_key}.md"
+        assert dest.read_bytes() == source.read_bytes()
+
+    def test_supports_explicit_date(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "sync"
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_sync_path.cache_clear()
+
+        last_week_key = diary_mod.parse_week_key("last week")
+        server_mod.push_diary_to_sync_folder(date="last week")
+
+        dest = sync_dir / f"{last_week_key}.md"
+        assert dest.exists()
+
+
 class TestJiraConfig:
     def test_get_jira_base_url_defaults_to_generic_value(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -898,6 +1004,103 @@ class TestJiraConfig:
         config_mod.get_jira_base_url.cache_clear()
         with pytest.raises(ValueError, match="must include a URL scheme"):
             config_mod.get_jira_base_url()
+
+
+# ---------------------------------------------------------------------------
+# Sync path config
+# ---------------------------------------------------------------------------
+
+
+class TestSyncPathConfig:
+    @staticmethod
+    def _clear_cache(config_mod) -> None:
+        config_mod.get_sync_path.cache_clear()
+
+    def test_returns_none_when_not_configured(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_sync_path() is None
+
+    def test_returns_path_from_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(tmp_path / "sync"))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
+        self._clear_cache(config_mod)
+
+        result = config_mod.get_sync_path()
+        assert result == (tmp_path / "sync").resolve()
+
+    def test_returns_path_from_settings_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        target = tmp_path / "from_settings"
+        settings = tmp_path / "settings.toml"
+        settings.write_text(f'sync_path = "{target.as_posix()}"\n', encoding="utf-8")
+        monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_sync_path() == target.resolve()
+
+    def test_env_var_takes_precedence_over_settings_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        env_target = tmp_path / "from_env"
+        file_target = tmp_path / "from_file"
+        settings = tmp_path / "settings.toml"
+        settings.write_text(f'sync_path = "{file_target.as_posix()}"\n', encoding="utf-8")
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(env_target))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_sync_path() == env_target.resolve()
+
+    def test_tilde_expanded_in_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", "~/Box/Work Diary")
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
+        self._clear_cache(config_mod)
+
+        result = config_mod.get_sync_path()
+        assert result is not None
+        assert "~" not in str(result)
+        assert result.parent.name == "Box"
+        assert result.name == "Work Diary"
+
+    def test_tilde_expanded_in_settings_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text('sync_path = "~/Box/Work Diary"\n', encoding="utf-8")
+        monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        result = config_mod.get_sync_path()
+        assert result is not None
+        assert "~" not in str(result)
+
+    def test_wrong_type_in_settings_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text("sync_path = 42\n", encoding="utf-8")
+        monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        with pytest.raises(TypeError, match="sync_path.*must be a string"):
+            config_mod.get_sync_path()
 
 
 class TestReminders:

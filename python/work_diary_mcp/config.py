@@ -17,6 +17,8 @@ JIRA_PREFIXES_ENV_VAR = "WORK_DIARY_JIRA_PREFIXES"
 _DEFAULT_JIRA_BASE_URL = "https://jira.example.com/browse"
 _DEFAULT_JIRA_PREFIXES: tuple[str, ...] = ("PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA")
 
+SYNC_PATH_ENV = "WORK_DIARY_SYNC_PATH"
+
 
 def _default_settings_file() -> str:
     """Return the platform-native default settings file path as a string."""
@@ -204,3 +206,39 @@ def _validate(path: Path, source: str) -> None:
             f"Data directory configured via {source} points to a path that "
             f"exists but is not a directory: {path}"
         )
+
+
+@lru_cache(maxsize=1)
+def get_sync_path() -> Path | None:
+    """Return the configured cloud-sync folder path, or ``None`` if not set.
+
+    Resolution order (first match wins):
+
+    1. ``WORK_DIARY_SYNC_PATH`` environment variable
+    2. ``sync_path`` key in the platform-native settings file
+
+    The returned path is expanded (``~`` is resolved) but the directory is
+    **not** created here; callers are responsible for creating it if needed.
+
+    Returns ``None`` when neither source is configured.
+
+    Raises:
+        TypeError: If ``sync_path`` is present in the settings file but is
+            not a string.
+    """
+    raw_env = os.environ.get(SYNC_PATH_ENV)
+    if raw_env:
+        return Path(raw_env).expanduser().resolve()
+
+    if SETTINGS_FILE.exists():
+        data = _load_settings_data(SETTINGS_FILE)
+        raw = data.get("sync_path")
+        if raw is not None:
+            if not isinstance(raw, str):
+                raise TypeError(
+                    f"Invalid settings file {SETTINGS_FILE}: "
+                    f"'sync_path' must be a string, got {type(raw).__name__!r}."
+                )
+            return Path(raw).expanduser().resolve()
+
+    return None
