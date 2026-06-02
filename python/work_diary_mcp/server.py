@@ -567,7 +567,7 @@ def push_diary_to_sync_folder(
         get_or_create_page_for_week(week_key)
 
         md_path = get_data_dir() / f"{week_key}.md"
-        if not md_path.exists():
+        if not md_path.is_file():
             raise ToolError(
                 f"Markdown file for {week_label} could not be found after page creation."
             )
@@ -579,6 +579,11 @@ def push_diary_to_sync_folder(
             )
         sync_path.mkdir(parents=True, exist_ok=True)
         dest = sync_path / f"{week_key}.md"
+        if dest.exists() and not dest.is_file():
+            raise ToolError(
+                f"Destination path `{dest}` exists but is not a file. "
+                "Remove it manually and try again."
+            )
         dest.write_bytes(md_path.read_bytes())
 
         return f"Copied **{week_label}** diary to `{dest}`."
