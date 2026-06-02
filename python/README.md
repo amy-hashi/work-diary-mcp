@@ -155,6 +155,14 @@ When configured, the `push_diary_to_sync_folder` tool copies the current (or any
 
 If `WORK_DIARY_SYNC_PATH` is not set, the tool returns a helpful error message rather than failing silently.
 
+To sync automatically after every diary write without calling the tool explicitly, also set:
+
+```bash
+export WORK_DIARY_AUTO_SYNC=1
+```
+
+When `WORK_DIARY_AUTO_SYNC` is enabled, every write operation (project updates, notes, reminders, etc.) silently copies the affected week's diary to the sync folder. Failures during auto-sync are suppressed so they never interfere with the primary write.
+
 ### Settings file
 
 Create a settings file with any combination of the following keys:
@@ -167,6 +175,7 @@ data_dir = "~/Documents/work-diary"
 jira_base_url = "https://jira.example.com/browse"
 jira_prefixes = ["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]
 sync_path = "~/Box/Work Diary"
+auto_sync = true
 ```
 
 Settings file keys:
@@ -175,6 +184,7 @@ Settings file keys:
 - `jira_base_url` — the base browse URL for your Jira instance
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
 - `sync_path` — path to a cloud-synced folder for `push_diary_to_sync_folder`
+- `auto_sync` — boolean (`true`/`false`); when `true`, every diary write automatically copies the affected week to the sync folder
 
 `jira_base_url` must be a non-empty URL and must include a scheme such as `https://`.
 
@@ -198,6 +208,11 @@ The configured path is expanded automatically and the directory is created on fi
 1. `WORK_DIARY_SYNC_PATH` environment variable
 2. `sync_path` in the platform-native settings file
 3. Not set — `push_diary_to_sync_folder` returns an error when unconfigured
+
+#### Auto-sync on save
+1. `WORK_DIARY_AUTO_SYNC` environment variable (truthy: `1`, `true`, `yes`, `on`)
+2. `auto_sync` in the platform-native settings file (boolean)
+3. Not set — defaults to `false` (opt-in)
 
 ---
 
