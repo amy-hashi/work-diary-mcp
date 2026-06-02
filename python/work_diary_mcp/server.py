@@ -569,10 +569,12 @@ def push_diary_to_sync_folder(
         get_or_create_page_for_week(week_key)
 
         md_path = get_data_dir() / f"{week_key}.md"
-        if not md_path.is_file():
-            raise ToolError(
-                f"Markdown file for {week_label} could not be found after page creation."
-            )
+        if md_path.is_file():
+            content = md_path.read_bytes()
+        else:
+            # The .md may have been deleted externally; render in-memory so we
+            # can still copy to the sync folder without requiring a full save.
+            content = get_diary_markdown(week_key).encode("utf-8-sig")
 
         if sync_path.exists() and not sync_path.is_dir():
             raise ToolError(
@@ -586,7 +588,6 @@ def push_diary_to_sync_folder(
                 f"Destination path `{dest}` exists but is not a file. "
                 "Remove it manually and try again."
             )
-        content = md_path.read_bytes()
         fd, temp_path_str = tempfile.mkstemp(
             dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp"
         )
