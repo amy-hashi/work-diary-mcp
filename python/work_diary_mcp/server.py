@@ -139,9 +139,12 @@ def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
         )
 
     content = get_diary_markdown(week_key)
+    existing_mode = dest.stat().st_mode if dest.exists() else None
     fd, temp_path_str = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     temp_path = Path(temp_path_str)
     try:
+        if existing_mode is not None and hasattr(os, "fchmod"):
+            os.fchmod(fd, existing_mode & 0o777)
         with os.fdopen(fd, "w", encoding="utf-8-sig") as fh:
             fh.write(content)
         temp_path.replace(dest)
