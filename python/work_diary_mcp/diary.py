@@ -509,9 +509,12 @@ def _atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> Non
         if existing_mode is not None and hasattr(os, "fchmod"):
             os.fchmod(fd, existing_mode & 0o777)
         with os.fdopen(fd, "w", encoding=encoding) as fh:
+            fd = -1  # fdopen took ownership; don't close in finally
             fh.write(content)
         temp_path.replace(path)
     finally:
+        if fd != -1:
+            os.close(fd)
         # Use missing_ok=True so a race with an external cleanup (or the
         # successful rename above, which moves temp_path away) does not
         # raise here. This avoids a TOCTOU window between exists() and

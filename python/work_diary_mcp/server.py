@@ -109,6 +109,73 @@ def _resolve_target_page(date: str | None) -> dict:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Private sync helpers
+# --------------------------------------------------------------------------- #
+
+
+def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
+    """Atomically copy the rendered Markdown for *week_key* into *sync_path*.
+
+    Renders the diary in-memory so the copy always reflects the latest state,
+    including reminder changes that may not yet be flushed to the on-disk .md.
+    Creates *sync_path* (and any parents) if it does not exist.
+    Returns the destination file path.
+
+    Raises ValueError if *sync_path* or the destination file path conflict with
+    an existing non-directory / non-file node.
+    """
+    # Validate paths before rendering to fail fast on config errors.
+    if sync_path.exists() and not sync_path.is_dir():
+        raise ValueError(
+            f"Configured sync path `{sync_path}` exists but is not a directory. "
+            "Check your WORK_DIARY_SYNC_PATH or sync_path setting."
+        )
+    sync_path.mkdir(parents=True, exist_ok=True)
+    dest = sync_path / f"{week_key}.md"
+    if dest.exists() and not dest.is_file():
+        raise ValueError(
+            f"Destination path `{dest}` exists but is not a file. Remove it manually and try again."
+        )
+
+    content = get_diary_markdown(week_key)
+    existing_mode = dest.stat().st_mode if dest.exists() else None
+    fd, temp_path_str = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+    temp_path = Path(temp_path_str)
+    try:
+        if existing_mode is not None and hasattr(os, "fchmod"):
+            os.fchmod(fd, existing_mode & 0o777)
+        with os.fdopen(fd, "w", encoding="utf-8-sig") as fh:
+            fd = -1  # fdopen took ownership; don't close in finally
+            fh.write(content)
+        temp_path.replace(dest)
+    finally:
+        if fd != -1:
+            os.close(fd)
+        temp_path.unlink(missing_ok=True)
+    return dest
+
+
+def _maybe_auto_sync(week_key: str) -> None:
+    """If auto-sync is enabled and a sync path is configured, copy the week's
+    diary to the sync folder.  Best-effort: the entire body is wrapped in a
+    broad except so that config errors (e.g. wrong type in settings file) and
+    I/O failures are silently swallowed and never surface as a failure of the
+    primary write operation.
+    """
+    from work_diary_mcp.config import get_auto_sync, get_sync_path
+
+    try:
+        if not get_auto_sync():
+            return
+        sync_path = get_sync_path()
+        if sync_path is None:
+            return
+        _copy_week_to_sync_folder(week_key, sync_path)
+    except Exception:
+        pass
+
+
 @mcp.tool(annotations={"readOnlyHint": False})
 def update_project_status_tool(
     project: Annotated[str, "The name of the project to update, e.g. 'Project Phoenix'"],
@@ -152,6 +219,7 @@ def update_project_status_tool(
             if page["is_new"]
             else ""
         )
+        _maybe_auto_sync(page["week_key"])
         return (
             f"{prefix}✅ Updated **{project}** → `{status}` "
             f"in your diary for the week of **{page['week_label']}**."
@@ -197,6 +265,7 @@ def bulk_update_projects_tool(
             else ""
         )
         result_lines = "\n".join(f"- {r}" for r in results)
+        _maybe_auto_sync(page["week_key"])
         return (
             f"{prefix}✅ Updated {len(results)} project(s) for the week of "
             f"**{page['week_label']}**:\n\n{result_lines}"
@@ -236,6 +305,7 @@ def set_project_role_tool(
     try:
         page = _resolve_target_page(date)
         resolved = set_project_role(page["week_key"], project, role)
+        _maybe_auto_sync(page["week_key"])
         if role.strip():
             return (
                 f"🎭 Set role for **{resolved}** in your diary for the week of "
@@ -263,6 +333,7 @@ def rename_project_tool(
     try:
         page = _resolve_target_page(date)
         rename_project(page["week_key"], old_name, new_name)
+        _maybe_auto_sync(page["week_key"])
         return (
             f"✏️ Renamed **{old_name}** → **{new_name}** "
             f"in your diary for the week of **{page['week_label']}**."
@@ -284,6 +355,7 @@ def remove_project_tool(
     try:
         page = _resolve_target_page(date)
         remove_project(page["week_key"], project)
+        _maybe_auto_sync(page["week_key"])
         return f"🗑️ Removed **{project}** from your diary for the week of **{page['week_label']}**."
     except Exception as e:
         raise ToolError(str(e)) from e
@@ -302,6 +374,7 @@ def clear_project_note_tool(
     try:
         page = _resolve_target_page(date)
         clear_project_note(page["week_key"], project)
+        _maybe_auto_sync(page["week_key"])
         return (
             f"🧹 Cleared note for **{project}** in your diary "
             f"for the week of **{page['week_label']}**."
@@ -336,6 +409,7 @@ def add_note_tool(
             if page["is_new"]
             else ""
         )
+        _maybe_auto_sync(page["week_key"])
         return f"{prefix}📝 Added note to your diary for the week of **{page['week_label']}**."
     except Exception as e:
         raise ToolError(str(e)) from e
@@ -365,6 +439,7 @@ def edit_note_tool(
     try:
         page = _resolve_target_page(date)
         edit_note(page["week_key"], index, new_content)
+        _maybe_auto_sync(page["week_key"])
         return f"✏️ Updated note [{index}] in your diary for the week of **{page['week_label']}**."
     except Exception as e:
         raise ToolError(str(e)) from e
@@ -386,6 +461,7 @@ def delete_note_tool(
     try:
         page = _resolve_target_page(date)
         deleted = delete_note(page["week_key"], index)
+        _maybe_auto_sync(page["week_key"])
         return (
             f"🗑️ Deleted note [{index}] from your diary "
             f"for the week of **{page['week_label']}**: '{deleted}'"
@@ -408,6 +484,7 @@ def add_reminder_tool(
         week_key = parse_week_key(date) if date else get_week_key()
         week_label = get_week_label(week_key)
         add_reminder(week_key, content, due_date)
+        _maybe_auto_sync(week_key)
         return f"⏰ Added a reminder for the week of **{week_label}**."
     except Exception as e:
         raise ToolError(str(e)) from e
@@ -452,6 +529,7 @@ def complete_reminder_tool(
         week_key = parse_week_key(date) if date else get_week_key()
         week_label = get_week_label(week_key)
         set_reminder_completed(week_key, index, True)
+        _maybe_auto_sync(week_key)
         return f"✅ Marked reminder [{index}] complete for the week of **{week_label}**."
     except Exception as e:
         raise ToolError(str(e)) from e
@@ -470,6 +548,7 @@ def reopen_reminder_tool(
         week_key = parse_week_key(date) if date else get_week_key()
         week_label = get_week_label(week_key)
         set_reminder_completed(week_key, index, False)
+        _maybe_auto_sync(week_key)
         return f"↩️ Reopened reminder [{index}] for the week of **{week_label}**."
     except Exception as e:
         raise ToolError(str(e)) from e
@@ -550,7 +629,7 @@ def push_diary_to_sync_folder(
     Configure the destination via the WORK_DIARY_SYNC_PATH environment variable
     or the sync_path key in the settings file.
     """
-    from work_diary_mcp.config import get_data_dir, get_sync_path
+    from work_diary_mcp.config import get_sync_path
 
     try:
         sync_path = get_sync_path()
@@ -565,40 +644,10 @@ def push_diary_to_sync_folder(
         week_key = parse_week_key(date) if date else get_week_key()
         week_label = get_week_label(week_key)
 
-        # Ensure the diary page exists and the Markdown file is up to date.
+        # Ensure the diary page exists before copying.
         get_or_create_page_for_week(week_key)
 
-        md_path = get_data_dir() / f"{week_key}.md"
-        if md_path.is_file():
-            content = md_path.read_bytes()
-        else:
-            # The .md may have been deleted externally; render in-memory so we
-            # can still copy to the sync folder without requiring a full save.
-            content = get_diary_markdown(week_key).encode("utf-8-sig")
-
-        if sync_path.exists() and not sync_path.is_dir():
-            raise ToolError(
-                f"Configured sync path `{sync_path}` exists but is not a directory. "
-                "Check your WORK_DIARY_SYNC_PATH or sync_path setting."
-            )
-        sync_path.mkdir(parents=True, exist_ok=True)
-        dest = sync_path / f"{week_key}.md"
-        if dest.exists() and not dest.is_file():
-            raise ToolError(
-                f"Destination path `{dest}` exists but is not a file. "
-                "Remove it manually and try again."
-            )
-        fd, temp_path_str = tempfile.mkstemp(
-            dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp"
-        )
-        temp_path = Path(temp_path_str)
-        try:
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(content)
-            temp_path.replace(dest)
-        finally:
-            temp_path.unlink(missing_ok=True)
-
+        dest = _copy_week_to_sync_folder(week_key, sync_path)
         return f"Copied **{week_label}** diary to `{dest}`."
     except ToolError:
         raise

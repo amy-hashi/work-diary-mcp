@@ -35,12 +35,14 @@ def diary_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     config_mod.get_data_dir.cache_clear()
     config_mod.get_sync_path.cache_clear()
+    config_mod.get_auto_sync.cache_clear()
     monkeypatch.setenv("WORK_DIARY_DATA_DIR", str(tmp_path))
     diary_mod._reset_caches()
     yield tmp_path
     diary_mod._reset_caches()
     config_mod.get_data_dir.cache_clear()
     config_mod.get_sync_path.cache_clear()
+    config_mod.get_auto_sync.cache_clear()
 
 
 def _week_key(d: date) -> str:
@@ -1101,6 +1103,198 @@ class TestSyncPathConfig:
 
         with pytest.raises(TypeError, match="sync_path.*must be a string"):
             config_mod.get_sync_path()
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync config
+# ---------------------------------------------------------------------------
+
+
+class TestAutoSyncConfig:
+    @staticmethod
+    def _clear_cache(config_mod) -> None:
+        config_mod.get_auto_sync.cache_clear()
+
+    def test_defaults_to_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.delenv("WORK_DIARY_AUTO_SYNC", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_auto_sync() is False
+
+    def test_env_var_truthy_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
+        for value in ("1", "true", "True", "TRUE", "yes", "YES", "on", "ON"):
+            monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", value)
+            self._clear_cache(config_mod)
+            assert config_mod.get_auto_sync() is True, f"expected True for {value!r}"
+
+    def test_env_var_falsy_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "nonexistent.toml")
+        for value in ("0", "false", "no", "off", ""):
+            monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", value)
+            self._clear_cache(config_mod)
+            assert config_mod.get_auto_sync() is False, f"expected False for {value!r}"
+
+    def test_settings_file_true(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text("auto_sync = true\n", encoding="utf-8")
+        monkeypatch.delenv("WORK_DIARY_AUTO_SYNC", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_auto_sync() is True
+
+    def test_settings_file_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text("auto_sync = false\n", encoding="utf-8")
+        monkeypatch.delenv("WORK_DIARY_AUTO_SYNC", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_auto_sync() is False
+
+    def test_env_var_takes_precedence_over_settings_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text("auto_sync = false\n", encoding="utf-8")
+        monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", "1")
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        assert config_mod.get_auto_sync() is True
+
+    def test_wrong_type_in_settings_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import work_diary_mcp.config as config_mod
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text('auto_sync = "yes"\n', encoding="utf-8")
+        monkeypatch.delenv("WORK_DIARY_AUTO_SYNC", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
+        self._clear_cache(config_mod)
+
+        with pytest.raises(TypeError, match="auto_sync.*must be a boolean"):
+            config_mod.get_auto_sync()
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync on save (integration)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoSyncOnSave:
+    """Verify that write tools trigger _maybe_auto_sync when auto_sync is on."""
+
+    def _setup_auto_sync(
+        self,
+        diary_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> Path:
+        """Enable auto-sync and return the configured sync directory."""
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "auto-sync"
+        monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", "1")
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_auto_sync.cache_clear()
+        config_mod.get_sync_path.cache_clear()
+        return sync_dir
+
+    def test_update_project_status_triggers_sync(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        sync_dir = self._setup_auto_sync(diary_dir, tmp_path, monkeypatch)
+        server_mod.update_project_status_tool(project="Widget", status="In Progress")
+        week_key = diary_mod.get_week_key()
+        assert (sync_dir / f"{week_key}.md").exists()
+
+    def test_add_note_triggers_sync(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        sync_dir = self._setup_auto_sync(diary_dir, tmp_path, monkeypatch)
+        server_mod.add_note_tool(content="Tested auto-sync on save.")
+        week_key = diary_mod.get_week_key()
+        dest = sync_dir / f"{week_key}.md"
+        assert dest.exists()
+        assert b"Tested auto-sync on save." in dest.read_bytes()
+
+    def test_complete_reminder_triggers_sync(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # Add a reminder first (auto-sync off so we get a clean state).
+        diary_mod.add_reminder(diary_mod.get_week_key(), "Do the thing", due_date=None)
+        sync_dir = self._setup_auto_sync(diary_dir, tmp_path, monkeypatch)
+        server_mod.complete_reminder_tool(index=1)
+        week_key = diary_mod.get_week_key()
+        assert (sync_dir / f"{week_key}.md").exists()
+
+    def test_no_sync_when_auto_sync_disabled(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        sync_dir = tmp_path / "no-sync"
+        monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", "0")
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_auto_sync.cache_clear()
+        config_mod.get_sync_path.cache_clear()
+
+        server_mod.add_note_tool(content="Should not sync.")
+        assert not sync_dir.exists()
+
+    def test_no_sync_when_sync_path_not_configured(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import work_diary_mcp.config as config_mod
+
+        monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", "1")
+        monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_auto_sync.cache_clear()
+        config_mod.get_sync_path.cache_clear()
+
+        # Should complete without raising, silently skipping the sync.
+        server_mod.add_note_tool(content="No sync path set.")
+
+    def test_sync_failure_does_not_propagate(
+        self, diary_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A broken sync path must not cause the write tool to fail."""
+        import work_diary_mcp.config as config_mod
+        import work_diary_mcp.server as srv
+
+        sync_dir = tmp_path / "bad-sync"
+        monkeypatch.setenv("WORK_DIARY_AUTO_SYNC", "1")
+        monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(sync_dir))
+        monkeypatch.setattr(config_mod, "SETTINGS_FILE", diary_dir / "nonexistent.toml")
+        config_mod.get_auto_sync.cache_clear()
+        config_mod.get_sync_path.cache_clear()
+
+        # Make the sync fail by patching the helper to always raise.
+        def _always_fails(*a, **kw):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(srv, "_copy_week_to_sync_folder", _always_fails)
+
+        # The note write should still succeed despite the sync failure.
+        result = server_mod.add_note_tool(content="Resilience test.")
+        assert "Added note" in result
 
 
 class TestReminders:
