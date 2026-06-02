@@ -6,6 +6,10 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ## [Unreleased]
 
+### Added
+- New `push_diary_to_sync_folder` MCP tool that copies the current (or any specified) week's Markdown diary file into a configured cloud-sync folder such as Box Drive, OneDrive, iCloud Drive, or Dropbox. The destination folder is created automatically if it does not exist; calling the tool again overwrites the previously copied file. Cloud sync is entirely optional: the tool returns a clear error message when `WORK_DIARY_SYNC_PATH` is not configured rather than failing silently.
+- New `WORK_DIARY_SYNC_PATH` environment variable and `sync_path` settings file key for configuring the cloud-sync destination folder. Supports `~` expansion. Resolution order: environment variable, then settings file.
+
 ### Fixed
 - Persisted Markdown diary files (`.md`) are now written with a UTF-8 BOM (`utf-8-sig` encoding) so that applications which do not auto-detect encoding (e.g. Box Notes) render emoji and other non-ASCII characters correctly. JSON files (`*.json`, `reminders.json`) continue to be written without a BOM, as required by the JSON standard. Existing `.md` files on disk will receive a BOM the next time they are re-rendered (e.g. when a project or reminder is updated).
 

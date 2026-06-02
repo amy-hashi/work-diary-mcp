@@ -1,3 +1,6 @@
+import os
+import tempfile
+from pathlib import Path
 from typing import Annotated
 
 from fastmcp import FastMCP
@@ -529,6 +532,76 @@ def list_weeks() -> str:
         count = len(weeks)
         plural = "s" if count != 1 else ""
         return f"Found {count} week{plural} with diary entries:\n\n" + "\n".join(lines)
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+def push_diary_to_sync_folder(
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
+) -> str:
+    """Copy the current week's diary Markdown file to the configured sync folder.
+
+    The sync folder is typically a cloud-synced directory such as Box Drive,
+    OneDrive, iCloud Drive, or Dropbox.  The destination folder is created
+    automatically if it does not already exist.  Calling the tool again
+    overwrites the previously copied file.
+
+    Configure the destination via the WORK_DIARY_SYNC_PATH environment variable
+    or the sync_path key in the settings file.
+    """
+    from work_diary_mcp.config import get_data_dir, get_sync_path
+
+    try:
+        sync_path = get_sync_path()
+        if sync_path is None:
+            raise ToolError(
+                "No sync folder configured. "
+                "Set the WORK_DIARY_SYNC_PATH environment variable or the "
+                "sync_path key in the settings file to the path of a "
+                "cloud-synced folder such as Box Drive, OneDrive, "
+                "iCloud Drive, or Dropbox."
+            )
+        week_key = parse_week_key(date) if date else get_week_key()
+        week_label = get_week_label(week_key)
+
+        # Ensure the diary page exists and the Markdown file is up to date.
+        get_or_create_page_for_week(week_key)
+
+        md_path = get_data_dir() / f"{week_key}.md"
+        if md_path.is_file():
+            content = md_path.read_bytes()
+        else:
+            # The .md may have been deleted externally; render in-memory so we
+            # can still copy to the sync folder without requiring a full save.
+            content = get_diary_markdown(week_key).encode("utf-8-sig")
+
+        if sync_path.exists() and not sync_path.is_dir():
+            raise ToolError(
+                f"Configured sync path `{sync_path}` exists but is not a directory. "
+                "Check your WORK_DIARY_SYNC_PATH or sync_path setting."
+            )
+        sync_path.mkdir(parents=True, exist_ok=True)
+        dest = sync_path / f"{week_key}.md"
+        if dest.exists() and not dest.is_file():
+            raise ToolError(
+                f"Destination path `{dest}` exists but is not a file. "
+                "Remove it manually and try again."
+            )
+        fd, temp_path_str = tempfile.mkstemp(
+            dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp"
+        )
+        temp_path = Path(temp_path_str)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(content)
+            temp_path.replace(dest)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        return f"Copied **{week_label}** diary to `{dest}`."
+    except ToolError:
+        raise
     except Exception as e:
         raise ToolError(str(e)) from e
 

@@ -143,6 +143,18 @@ If you run multiple processes that write to the same data directory, set `WORK_D
 export WORK_DIARY_FILE_LOCKS=1
 ```
 
+#### Cloud sync
+
+Set `WORK_DIARY_SYNC_PATH` to the path of a cloud-synced folder (Box Drive, OneDrive, iCloud Drive, Dropbox, etc.):
+
+```bash
+export WORK_DIARY_SYNC_PATH="~/Box/Work Diary"
+```
+
+When configured, the `push_diary_to_sync_folder` tool copies the current (or any specified) week's Markdown diary file into this folder. The folder is created automatically if it does not already exist. The sync client then handles the upload in the background.
+
+If `WORK_DIARY_SYNC_PATH` is not set, the tool returns a helpful error message rather than failing silently.
+
 ### Settings file
 
 Create a settings file with any combination of the following keys:
@@ -154,6 +166,7 @@ Create a settings file with any combination of the following keys:
 data_dir = "~/Documents/work-diary"
 jira_base_url = "https://jira.example.com/browse"
 jira_prefixes = ["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]
+sync_path = "~/Box/Work Diary"
 ```
 
 Settings file keys:
@@ -161,6 +174,7 @@ Settings file keys:
 - `data_dir` — where diary files and reminder storage should live
 - `jira_base_url` — the base browse URL for your Jira instance
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
+- `sync_path` — path to a cloud-synced folder for `push_diary_to_sync_folder`
 
 `jira_base_url` must be a non-empty URL and must include a scheme such as `https://`.
 
@@ -179,6 +193,11 @@ The configured path is expanded automatically and the directory is created on fi
 3. Built-in defaults:
    - `https://jira.example.com/browse`
    - `["PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA"]`
+
+#### Cloud sync
+1. `WORK_DIARY_SYNC_PATH` environment variable
+2. `sync_path` in the platform-native settings file
+3. Not set — `push_diary_to_sync_folder` returns an error when unconfigured
 
 ---
 
@@ -202,6 +221,7 @@ The configured path is expanded automatically and the directory is created on fi
 | `list_weeks` | List all weeks that have diary entries, sorted oldest to newest. |
 | `remove_project` | Remove a project and its note from the target week. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for removal. |
 | `clear_project_note` | Clear the inline note for a project, leaving its status intact. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for note clearing. |
+| `push_diary_to_sync_folder` | Copy the current (or any specified) week's Markdown diary file to the configured cloud-sync folder (Box Drive, OneDrive, iCloud Drive, Dropbox, etc.). The destination folder is created automatically if it does not exist; repeated calls overwrite the previously copied file. Requires `WORK_DIARY_SYNC_PATH` or `sync_path` to be configured. Supports an optional `date` to target a specific week. |
 
 ---
 
