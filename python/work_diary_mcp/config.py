@@ -18,6 +18,7 @@ _DEFAULT_JIRA_BASE_URL = "https://jira.example.com/browse"
 _DEFAULT_JIRA_PREFIXES: tuple[str, ...] = ("PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA")
 
 SYNC_PATH_ENV = "WORK_DIARY_SYNC_PATH"
+AUTO_SYNC_ENV = "WORK_DIARY_AUTO_SYNC"
 
 
 def _default_settings_file() -> str:
@@ -242,3 +243,36 @@ def get_sync_path() -> Path | None:
             return Path(raw).expanduser().resolve()
 
     return None
+
+
+@lru_cache(maxsize=1)
+def get_auto_sync() -> bool:
+    """Return True if the server should automatically sync the diary on every write.
+
+    Resolution order (first match wins):
+
+    1. ``WORK_DIARY_AUTO_SYNC`` environment variable
+       (truthy: ``"1"``, ``"true"``, ``"yes"``, ``"on"``; all other values -> False)
+    2. ``auto_sync`` key in the platform-native settings file (must be a boolean)
+    3. ``False`` (default -- opt-in)
+
+    Raises:
+        TypeError: If ``auto_sync`` is present in the settings file but is
+            not a boolean.
+    """
+    raw_env = os.environ.get(AUTO_SYNC_ENV)
+    if raw_env is not None:
+        return raw_env.strip().lower() in {"1", "true", "yes", "on"}
+
+    if SETTINGS_FILE.exists():
+        data = _load_settings_data(SETTINGS_FILE)
+        raw = data.get("auto_sync")
+        if raw is not None:
+            if not isinstance(raw, bool):
+                raise TypeError(
+                    f"Invalid settings file {SETTINGS_FILE}: "
+                    f"'auto_sync' must be a boolean, got {type(raw).__name__!r}."
+                )
+            return raw
+
+    return False
