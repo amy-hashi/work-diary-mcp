@@ -1042,7 +1042,7 @@ class TestSyncPathConfig:
 
         target = tmp_path / "from_settings"
         settings = tmp_path / "settings.toml"
-        settings.write_text(f'sync_path = "{target}"\n', encoding="utf-8")
+        settings.write_text(f'sync_path = "{target.as_posix()}"\n', encoding="utf-8")
         monkeypatch.delenv("WORK_DIARY_SYNC_PATH", raising=False)
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
         self._clear_cache(config_mod)
@@ -1057,7 +1057,7 @@ class TestSyncPathConfig:
         env_target = tmp_path / "from_env"
         file_target = tmp_path / "from_file"
         settings = tmp_path / "settings.toml"
-        settings.write_text(f'sync_path = "{file_target}"\n', encoding="utf-8")
+        settings.write_text(f'sync_path = "{file_target.as_posix()}"\n', encoding="utf-8")
         monkeypatch.setenv("WORK_DIARY_SYNC_PATH", str(env_target))
         monkeypatch.setattr(config_mod, "SETTINGS_FILE", settings)
         self._clear_cache(config_mod)
