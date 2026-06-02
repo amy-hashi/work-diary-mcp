@@ -109,6 +109,66 @@ def _resolve_target_page(date: str | None) -> dict:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Private sync helpers
+# --------------------------------------------------------------------------- #
+
+
+def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
+    """Atomically copy the rendered Markdown for *week_key* into *sync_path*.
+
+    Renders the diary in-memory so the copy always reflects the latest state,
+    including reminder changes that may not yet be flushed to the on-disk .md.
+    Creates *sync_path* (and any parents) if it does not exist.
+    Returns the destination file path.
+
+    Raises ValueError if *sync_path* or the destination file path conflict with
+    an existing non-directory / non-file node.
+    """
+    content = get_diary_markdown(week_key).encode("utf-8-sig")
+
+    if sync_path.exists() and not sync_path.is_dir():
+        raise ValueError(
+            f"Configured sync path `{sync_path}` exists but is not a directory. "
+            "Check your WORK_DIARY_SYNC_PATH or sync_path setting."
+        )
+    sync_path.mkdir(parents=True, exist_ok=True)
+    dest = sync_path / f"{week_key}.md"
+    if dest.exists() and not dest.is_file():
+        raise ValueError(
+            f"Destination path `{dest}` exists but is not a file. Remove it manually and try again."
+        )
+    fd, temp_path_str = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+    temp_path = Path(temp_path_str)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content)
+        temp_path.replace(dest)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return dest
+
+
+def _maybe_auto_sync(week_key: str) -> None:
+    """If auto-sync is enabled and a sync path is configured, copy the week's
+    diary to the sync folder.  Best-effort: the entire body is wrapped in a
+    broad except so that config errors (e.g. wrong type in settings file) and
+    I/O failures are silently swallowed and never surface as a failure of the
+    primary write operation.
+    """
+    from work_diary_mcp.config import get_auto_sync, get_sync_path
+
+    try:
+        if not get_auto_sync():
+            return
+        sync_path = get_sync_path()
+        if sync_path is None:
+            return
+        _copy_week_to_sync_folder(week_key, sync_path)
+    except Exception:
+        pass
+
+
 @mcp.tool(annotations={"readOnlyHint": False})
 def update_project_status_tool(
     project: Annotated[str, "The name of the project to update, e.g. 'Project Phoenix'"],
@@ -546,59 +606,6 @@ def list_weeks() -> str:
         return f"Found {count} week{plural} with diary entries:\n\n" + "\n".join(lines)
     except Exception as e:
         raise ToolError(str(e)) from e
-
-
-def _copy_week_to_sync_folder(week_key: str, sync_path: Path) -> Path:
-    """Atomically copy the rendered Markdown for *week_key* into *sync_path*.
-
-    Renders the diary in-memory so the copy always reflects the latest state,
-    including reminder changes that may not yet be flushed to the on-disk .md.
-    Creates *sync_path* (and any parents) if it does not exist.
-    Returns the destination file path.
-
-    Raises ToolError if *sync_path* or the destination file path conflict with
-    an existing non-directory / non-file node.
-    """
-    content = get_diary_markdown(week_key).encode("utf-8-sig")
-
-    if sync_path.exists() and not sync_path.is_dir():
-        raise ToolError(
-            f"Configured sync path `{sync_path}` exists but is not a directory. "
-            "Check your WORK_DIARY_SYNC_PATH or sync_path setting."
-        )
-    sync_path.mkdir(parents=True, exist_ok=True)
-    dest = sync_path / f"{week_key}.md"
-    if dest.exists() and not dest.is_file():
-        raise ToolError(
-            f"Destination path `{dest}` exists but is not a file. Remove it manually and try again."
-        )
-    fd, temp_path_str = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
-    temp_path = Path(temp_path_str)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(content)
-        temp_path.replace(dest)
-    finally:
-        temp_path.unlink(missing_ok=True)
-    return dest
-
-
-def _maybe_auto_sync(week_key: str) -> None:
-    """If auto-sync is enabled and a sync path is configured, copy the week's
-    diary to the sync folder.  Best-effort: failures are silently swallowed so
-    they never surface to the user as a failure of the primary write operation.
-    """
-    from work_diary_mcp.config import get_auto_sync, get_sync_path
-
-    if not get_auto_sync():
-        return
-    sync_path = get_sync_path()
-    if sync_path is None:
-        return
-    try:
-        _copy_week_to_sync_folder(week_key, sync_path)
-    except Exception:
-        pass
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})

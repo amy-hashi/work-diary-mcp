@@ -1287,11 +1287,10 @@ class TestAutoSyncOnSave:
         config_mod.get_sync_path.cache_clear()
 
         # Make the sync fail by patching the helper to always raise.
-        monkeypatch.setattr(
-            srv,
-            "_copy_week_to_sync_folder",
-            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("disk full")),
-        )
+        def _always_fails(*a, **kw):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(srv, "_copy_week_to_sync_folder", _always_fails)
 
         # The note write should still succeed despite the sync failure.
         result = server_mod.add_note_tool(content="Resilience test.")
