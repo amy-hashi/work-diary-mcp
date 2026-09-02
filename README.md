@@ -11,6 +11,7 @@ For a running summary of changes, see [CHANGELOG.md](CHANGELOG.md).
 ## Index
 
 - [Quick Start](#quick-start)
+- [Copilot CLI Skill (when the MCP server can't be used directly)](#copilot-cli-skill-when-the-mcp-server-cant-be-used-directly)
 - [Configuration](#configuration)
 - [Tools](#tools)
 - [Usage](#usage)
@@ -70,6 +71,31 @@ Use whatever `uv` executable path is correct for your platform:
 ```bash
 claude mcp add work-diary /path/to/uv \
   --directory $HOME/work-diary-mcp/python run work-diary-mcp
+```
+
+---
+
+## Copilot CLI Skill (when the MCP server can't be used directly)
+
+Some environments and policies don't allow connecting to this repo's MCP server directly (e.g. [GitHub Copilot CLI](https://github.com/github/copilot-cli) sessions that restrict arbitrary MCP servers). For those cases, this repo also ships an [Agent Skill](https://github.com/github/skills) at [`skill/`](skill/) that gives an agent the same functionality via a plain CLI script instead of the MCP protocol.
+
+The skill's `cli.py` imports the `work_diary_mcp` library directly (`config.py`, `diary.py`, `jira.py`, `markdown.py`, `roles.py`, `statuses.py` — everything except `server.py`, which only exists to speak MCP). It reads and writes the exact same diary data files and respects the exact same configuration (env vars and/or the settings file), so it's fully interchangeable with the MCP tools — nothing about your diary data or settings needs to change to use one vs. the other. No third-party dependencies are required (`fastmcp`/`mcp` are only needed by `server.py`); plain Python 3.11+ is enough.
+
+**Install:**
+
+```bash
+mkdir -p ~/.agents/skills/work-diary
+cp skill/SKILL.md skill/cli.py ~/.agents/skills/work-diary/
+chmod +x ~/.agents/skills/work-diary/cli.py
+```
+
+The skill expects this repository to be checked out at `~/work-diary-mcp` (it adds `~/work-diary-mcp/python` to `sys.path` to import the library). If you cloned it elsewhere, edit the `_LIB_DIR` path near the top of `cli.py` accordingly.
+
+Once installed, an agent that supports Copilot CLI-style skills (per its `SKILL.md` frontmatter `description`) will invoke it automatically for requests like "update Project Phoenix to at risk" or "show me my work diary" — you don't need to run the CLI yourself. See [`skill/SKILL.md`](skill/SKILL.md) for the full command reference, or run:
+
+```bash
+python3 ~/.agents/skills/work-diary/cli.py --help
+python3 ~/.agents/skills/work-diary/cli.py <command> --help
 ```
 
 ---
@@ -463,6 +489,9 @@ work-diary-mcp/
 ├── data/                          # Diary files (gitignored) — default location
 │   ├── YYYY-MM-DD.json            # Raw state for each week
 │   └── YYYY-MM-DD.md              # Rendered Markdown, ready to copy into Loop
+├── skill/                         # Agent Skill: same functionality without an MCP client
+│   ├── SKILL.md                   # Skill description and command reference
+│   └── cli.py                     # CLI wrapper around work_diary_mcp (no MCP protocol)
 └── python/
     ├── README.md                  # Python-specific setup details
     ├── pyproject.toml
