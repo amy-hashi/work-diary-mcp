@@ -1,4 +1,5 @@
-from work_diary_mcp.statuses import format_status
+from work_diary_mcp.config import get_reviews_title
+from work_diary_mcp.statuses import format_review_status, format_status
 
 
 def _format_reminder_line(reminder: dict) -> str:
@@ -38,6 +39,7 @@ def render_diary(state: dict) -> str:
     projects: dict[str, str] = state.get("projects", {})
     project_notes: dict[str, str] = state.get("projectNotes", {})
     project_roles: dict[str, str] = state.get("projectRoles", {})
+    reviews: dict[str, dict[str, str]] = state.get("reviews", {})
     notes: list[dict] = state.get("notes", [])
 
     label = get_week_label(week_key)
@@ -80,6 +82,22 @@ def render_diary(state: dict) -> str:
             )
 
     lines.append("")
+
+    # Reviews (only rendered when something is being tracked)
+    if reviews:
+        lines.append(f"## {get_reviews_title()}")
+        lines.append("")
+        lines.append("| Story | My Role | Story Status | My Status |")
+        lines.append("|-------|---------|--------------|-----------|")
+        for item, entry in reviews.items():
+            lines.append(
+                "| "
+                f"{_escape_table_cell(item)} | "
+                f"{_escape_table_cell(entry.get('role', ''))} | "
+                f"{_escape_table_cell(entry.get('storyStatus', ''))} | "
+                f"{_escape_table_cell(format_review_status(entry.get('status', '')))} |"
+            )
+        lines.append("")
 
     # General notes
     lines.append("## Notes")

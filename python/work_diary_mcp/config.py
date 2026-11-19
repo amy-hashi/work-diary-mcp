@@ -13,9 +13,11 @@ from pathlib import Path
 ENV_VAR = "WORK_DIARY_DATA_DIR"
 JIRA_BASE_URL_ENV_VAR = "WORK_DIARY_JIRA_BASE_URL"
 JIRA_PREFIXES_ENV_VAR = "WORK_DIARY_JIRA_PREFIXES"
+REVIEWS_TITLE_ENV_VAR = "WORK_DIARY_REVIEWS_TITLE"
 
 _DEFAULT_JIRA_BASE_URL = "https://jira.example.com/browse"
 _DEFAULT_JIRA_PREFIXES: tuple[str, ...] = ("PROJ", "INFRA", "ENG", "OPS", "SEC", "DATA")
+_DEFAULT_REVIEWS_TITLE = "Reviews"
 
 SYNC_PATH_ENV = "WORK_DIARY_SYNC_PATH"
 AUTO_SYNC_ENV = "WORK_DIARY_AUTO_SYNC"
@@ -185,6 +187,28 @@ def get_jira_prefixes() -> tuple[str, ...]:
             return prefixes or _DEFAULT_JIRA_PREFIXES
 
     return _DEFAULT_JIRA_PREFIXES
+
+
+@lru_cache(maxsize=1)
+def get_reviews_title() -> str:
+    """Return the heading used for the reviews section of the rendered diary."""
+    raw_env = os.environ.get(REVIEWS_TITLE_ENV_VAR)
+    if raw_env and raw_env.strip():
+        return raw_env.strip()
+
+    if SETTINGS_FILE.exists():
+        data = _load_settings_data(SETTINGS_FILE)
+        raw = data.get("reviews_title")
+        if raw is not None:
+            if not isinstance(raw, str):
+                raise TypeError(
+                    f"Invalid settings file {SETTINGS_FILE}: "
+                    f"'reviews_title' must be a string, got {type(raw).__name__!r}."
+                )
+            if raw.strip():
+                return raw.strip()
+
+    return _DEFAULT_REVIEWS_TITLE
 
 
 def _normalize_jira_base_url(value: str, source: str) -> str:

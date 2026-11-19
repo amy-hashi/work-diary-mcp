@@ -52,6 +52,19 @@ def strip_markdown_links(text: str) -> str:
     return _MARKDOWN_LINK_RE.sub(r"\1", text)
 
 
+def markdown_link_destinations(text: str) -> list[str]:
+    """Return the destination URL of every Markdown link in *text*.
+
+    An optional link title (``[x](https://... "title")``) is dropped.
+    """
+    destinations = []
+    for _label, target in _MARKDOWN_LINK_RE.findall(text):
+        parts = target.split()
+        if parts:
+            destinations.append(parts[0])
+    return destinations
+
+
 def linkify_jira_refs(text: str) -> str:
     """Replace bare Jira ticket references in *text* with Markdown links.
 

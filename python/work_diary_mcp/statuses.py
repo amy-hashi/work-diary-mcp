@@ -39,3 +39,26 @@ def format_status(status: str) -> str:
 def is_completed(status: str) -> bool:
     """Return True if *status* is a terminal (completed/cancelled) status."""
     return status.strip().lower() in COMPLETED_STATUSES
+
+
+# --------------------------------------------------------------------------- #
+# Review ("my status") definitions
+# --------------------------------------------------------------------------- #
+
+# Personal review state for items in the reviews section. Distinct from
+# project STATUS_MAP: this tracks whether *I* have reviewed/approved an item,
+# independent of the underlying story's own status.
+REVIEW_STATUS_MAP: dict[str, str] = {
+    "to do": "☐ To Do",
+    "todo": "☐ To Do",
+    "pending": "☐ To Do",
+    "reviewed and approved": "✅ Reviewed & Approved",
+    "reviewed & approved": "✅ Reviewed & Approved",
+    "approved": "✅ Reviewed & Approved",
+    "reviewed": "✅ Reviewed & Approved",
+}
+
+
+def format_review_status(status: str) -> str:
+    """Return the emoji-decorated display string for a review status, or the raw value."""
+    return REVIEW_STATUS_MAP.get(status.strip().lower(), status)
