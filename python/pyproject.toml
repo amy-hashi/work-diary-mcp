@@ -1,10 +1,10 @@
 [project]
 name = "work-diary-mcp"
-version = "0.3.0"
+version = "0.5.0"
 description = "MCP server for managing a weekly work diary"
 requires-python = ">=3.11"
 dependencies = [
-    "fastmcp>=2.0.0",
+    "fastmcp>=4.1.2",
 ]
 
 [dependency-groups]
