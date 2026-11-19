@@ -51,7 +51,7 @@ Project references also accept row form, e.g. `--project "project 2"`.
 - **Data location**: resolved from `WORK_DIARY_DATA_DIR` env var, else a settings file (`~/.config/work-diary/settings.toml`), else `~/work-diary-mcp/data`. Don't override unless the user asks — it should already point at their real diary data.
 - **Persisted settings**: `~/.config/work-diary/settings.toml` carries this user's configuration (same file the MCP server reads), so both the skill and server stay in sync automatically:
   - `data_dir` — diary data location
-  - `jira_base_url` = `https://hashicorp.atlassian.net/`
+  - `jira_base_url` = `https://jira.example.com/browse/` (must end in `/browse` so ticket links resolve)
   - `jira_prefixes` = `PROJ, INFRA, ENG, OPS, SEC, DATA`
   - `sync_path` = `~/CloudStorage/Box/work-diary`
   - `auto_sync` = `true` (every write auto-copies the week's Markdown to `sync_path`, so `push-sync` is rarely needed manually)
