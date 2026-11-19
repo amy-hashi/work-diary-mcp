@@ -29,6 +29,11 @@ Usage examples:
     cli.py complete-reminder --index N [--date DATE]
     cli.py reopen-reminder --index N [--date DATE]
     cli.py push-sync [--date DATE]
+    cli.py list-reviews [--date DATE] [--json]
+    cli.py bulk-update-reviews --json '[{"item": "[PROJ-1](https://jira.example.com/browse/PROJ-1)",
+                                          "role": "Delegate", "story_status": "In Progress",
+                                          "status": "To Do"}]' [--date DATE]
+    cli.py remove-review --item ITEM [--date DATE]
 
 All commands print a human-readable confirmation (or JSON, for list
 commands with --json) and exit 0 on success, or print "Error: ..." to
@@ -36,7 +41,7 @@ stderr and exit 1 on failure.
 
 Configuration (env vars, same as the MCP server):
     WORK_DIARY_DATA_DIR, WORK_DIARY_JIRA_BASE_URL, WORK_DIARY_JIRA_PREFIXES,
-    WORK_DIARY_SYNC_PATH, WORK_DIARY_AUTO_SYNC
+    WORK_DIARY_SYNC_PATH, WORK_DIARY_AUTO_SYNC, WORK_DIARY_REVIEWS_TITLE
 """
 from __future__ import annotations
 
@@ -177,6 +182,39 @@ def cmd_bulk_update(args):
     print(f"{prefix}Updated {len(results)} project(s) for the week of {page['week_label']}:")
     for r in results:
         print(f"- {r}")
+
+
+def cmd_list_reviews(args):
+    week_key = _week_key_for(args.date)
+    label = diary.get_week_label(week_key)
+    reviews = diary.list_reviews(week_key)
+    if args.json:
+        print(json.dumps(reviews, indent=2))
+        return
+    if not reviews:
+        print(f"No reviews tracked yet for the week of {label}.")
+        return
+    print(f"Reviews for the week of {label}:\n")
+    for item, e in reviews.items():
+        print(f"- {item}: {e['role']} | story: {e['storyStatus']} | mine: {e['status']}")
+
+
+def cmd_bulk_update_reviews(args):
+    updates = json.loads(args.json)
+    page = _resolve_target_page(args.date)
+    results = diary.bulk_update_reviews(page["week_key"], updates)
+    _maybe_auto_sync(page["week_key"])
+    prefix = f"Created new diary for the week of {page['week_label']}.\n" if page["is_new"] else ""
+    print(f"{prefix}Updated {len(results)} review item(s) for the week of {page['week_label']}:")
+    for r in results:
+        print(f"- {r}")
+
+
+def cmd_remove_review(args):
+    page = _resolve_target_page(args.date)
+    diary.remove_review(page["week_key"], args.item)
+    _maybe_auto_sync(page["week_key"])
+    print(f"Removed {args.item} from the reviews for the week of {page['week_label']}.")
 
 
 def cmd_set_role(args):
@@ -393,6 +431,30 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("push-sync", help="Copy a week's diary Markdown to the configured sync folder")
     add_date(sp)
     sp.set_defaults(func=cmd_push_sync)
+
+    sp = sub.add_parser("list-reviews", help="List items in the reviews section for a week")
+    add_date(sp)
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_list_reviews)
+
+    sp = sub.add_parser(
+        "bulk-update-reviews", help="Add/update several items in the reviews section"
+    )
+    sp.add_argument(
+        "--json",
+        required=True,
+        help=(
+            'JSON list, e.g. \'[{"item": "[PROJ-1](https://...)", "role": "Delegate", '
+            '"story_status": "In Progress", "status": "To Do"}]\''
+        ),
+    )
+    add_date(sp)
+    sp.set_defaults(func=cmd_bulk_update_reviews)
+
+    sp = sub.add_parser("remove-review", help="Remove an item from the reviews section")
+    sp.add_argument("--item", required=True)
+    add_date(sp)
+    sp.set_defaults(func=cmd_remove_review)
 
     return p
 

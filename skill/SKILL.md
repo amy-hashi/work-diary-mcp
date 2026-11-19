@@ -1,6 +1,6 @@
 ---
 name: work-diary
-description: Track weekly work status, project notes, and reminders in a personal work diary (equivalent to the work-diary-mcp server). Use when the user asks to update a project's status, add a note or reminder to their work diary, view their diary/standup notes, list tracked projects, or push the diary to a synced cloud folder — without using the work-diary MCP server directly.
+description: Track weekly work status, project notes, reminders, and a reviews section in a personal work diary (equivalent to the work-diary-mcp server). Use when the user asks to update a project's status, add a note or reminder to their work diary, view their diary/standup notes, list tracked projects, or push the diary to a synced cloud folder — without using the work-diary MCP server directly.
 ---
 
 # Work Diary
@@ -40,6 +40,9 @@ flags. Every command accepts `--date` to target a specific week (ISO date,
 - `complete-reminder --index N [--date D]`
 - `reopen-reminder --index N [--date D]`
 - `push-sync [--date D]` — copy the week's Markdown to the configured cloud-sync folder (`WORK_DIARY_SYNC_PATH` env var or `sync_path` in the settings file). Errors if not configured.
+- `list-reviews [--date D] [--json]` — list items in the reviews section (e.g. architecture-review stories you are assigned to or a delegate on).
+- `bulk-update-reviews --json '[{"item":"[PROJ-1](https://jira.example.com/browse/PROJ-1)","role":"Delegate","story_status":"In Progress","status":"To Do"}]' [--date D]` — add or update review rows (`item` is the display text, `role` is e.g. Assignee/Delegate, `story_status` is the Jira story status, `status` is your own progress, e.g. To Do / Reviewed and approved).
+- `remove-review --item ITEM [--date D]` — remove a row from the reviews section.
 
 Project references also accept row form, e.g. `--project "project 2"`.
 
@@ -54,8 +57,9 @@ Project references also accept row form, e.g. `--project "project 2"`.
   - `jira_base_url` = `https://jira.example.com/browse/` (must end in `/browse` so ticket links resolve)
   - `jira_prefixes` = `PROJ, INFRA, ENG, OPS, SEC, DATA`
   - `sync_path` = `~/CloudStorage/Box/work-diary`
+  - `reviews_title` = `Reviews` (heading for the reviews section)
   - `auto_sync` = `true` (every write auto-copies the week's Markdown to `sync_path`, so `push-sync` is rarely needed manually)
-  Corresponding env vars (`WORK_DIARY_DATA_DIR`, `WORK_DIARY_JIRA_BASE_URL`, `WORK_DIARY_JIRA_PREFIXES`, `WORK_DIARY_SYNC_PATH`, `WORK_DIARY_AUTO_SYNC`) override the settings file if ever set, but normally shouldn't need to be.
+  Corresponding env vars (`WORK_DIARY_DATA_DIR`, `WORK_DIARY_JIRA_BASE_URL`, `WORK_DIARY_JIRA_PREFIXES`, `WORK_DIARY_SYNC_PATH`, `WORK_DIARY_AUTO_SYNC`, `WORK_DIARY_REVIEWS_TITLE`) override the settings file if ever set, but normally shouldn't need to be.
 
 ## Tone and content guidance (mirrors the MCP server's instructions)
 
