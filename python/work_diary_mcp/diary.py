@@ -15,6 +15,8 @@ from work_diary_mcp.jira import linkify_jira_refs, strip_markdown_links
 from work_diary_mcp.roles import format_role
 from work_diary_mcp.statuses import is_completed
 
+_ITEM_KEY_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
+
 # --------------------------------------------------------------------------- #
 # Types
 # --------------------------------------------------------------------------- #
@@ -31,16 +33,30 @@ class ReminderEntry(TypedDict):
     dueDate: NotRequired[str]
 
 
+class ReviewEntry(TypedDict):
+    role: str
+    storyStatus: str
+    status: str
+
+
 class DiaryState(TypedDict):
     weekKey: str
     projects: dict[str, str]
     projectNotes: dict[str, str]
     projectRoles: dict[str, str]
+    reviews: dict[str, ReviewEntry]
     notes: list[NoteEntry]
 
 
 class ReminderState(TypedDict):
     reminders: dict[str, list[ReminderEntry]]
+
+
+class ReviewUpdate(TypedDict):
+    item: str
+    role: str
+    story_status: str
+    status: str
 
 
 class ProjectUpdate(TypedDict):
@@ -145,6 +161,7 @@ def _empty_state(week_key: str) -> DiaryState:
         "projects": {},
         "projectNotes": {},
         "projectRoles": {},
+        "reviews": {},
         "notes": [],
     }
 
@@ -195,6 +212,19 @@ def _validate_state(state: DiaryState, week_key: str | None = None) -> DiaryStat
     for project, role in project_roles.items():
         if not isinstance(project, str) or not isinstance(role, str):
             raise ValueError("Diary state field 'projectRoles' must map strings to strings.")
+
+    reviews = state.get("reviews")
+    if reviews is None:
+        reviews = {}
+        state["reviews"] = reviews
+    if not isinstance(reviews, dict):
+        raise ValueError("Diary state field 'reviews' must be an object.")
+    for item, entry in reviews.items():
+        if not isinstance(item, str) or not isinstance(entry, dict):
+            raise ValueError("Diary state field 'reviews' must map strings to objects.")
+        for field in ("role", "storyStatus", "status"):
+            if not isinstance(entry.get(field), str):
+                raise ValueError(f"Each review entry must contain a string '{field}' field.")
 
     notes = state.get("notes")
     if notes is None:
@@ -797,7 +827,7 @@ def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
     if target_week_key is not None:
         weeks = [week for week in weeks if week < target_week_key]
     if not weeks:
-        return {"projects": {}, "projectNotes": {}, "projectRoles": {}}
+        return {"projects": {}, "projectNotes": {}, "projectRoles": {}, "reviews": {}}
     last = _load_state(weeks[-1])
 
     projects: dict[str, str] = {}
@@ -809,7 +839,20 @@ def _get_carry_forward_state(target_week_key: str | None = None) -> dict:
             if project in last_roles:
                 project_roles[project] = last_roles[project]
 
-    return {"projects": projects, "projectNotes": {}, "projectRoles": project_roles}
+    # Reviews are tracked until the underlying story is finished; my own
+    # review status is carried so an approval isn't lost week-over-week.
+    reviews = {
+        item: dict(entry)
+        for item, entry in last.get("reviews", {}).items()
+        if not is_completed(entry["storyStatus"])
+    }
+
+    return {
+        "projects": projects,
+        "projectNotes": {},
+        "projectRoles": project_roles,
+        "reviews": reviews,
+    }
 
 
 def _get_carry_forward_reminders(
@@ -930,7 +973,7 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
             initial_state = (
                 _get_carry_forward_state(week_key)
                 if carry_forward
-                else {"projects": {}, "projectNotes": {}, "projectRoles": {}}
+                else {"projects": {}, "projectNotes": {}, "projectRoles": {}, "reviews": {}}
             )
 
             # Carry forward uncompleted reminders from the prior week.
@@ -953,6 +996,7 @@ def _ensure_week_page(week_key: str, carry_forward: bool) -> dict:
                     "projects": initial_state["projects"],
                     "projectNotes": initial_state["projectNotes"],
                     "projectRoles": initial_state.get("projectRoles", {}),
+                    "reviews": initial_state.get("reviews", {}),
                     "notes": [],
                 },
                 reminders=reminders,
@@ -1322,6 +1366,75 @@ def remove_project(week_key: str, project: str) -> None:
         state["projectNotes"].pop(existing_key, None)
         state["projectRoles"].pop(existing_key, None)
         _save_state(state, reminders=reminders)
+
+
+def _find_review_key(state: DiaryState, item: str) -> str | None:
+    """Return the existing review key matching *item*, or None.
+
+    Matches the stored key exactly, or by ticket id (e.g. ``PROJ-123``) so a
+    bare id, a Markdown link, or a re-linked URL all resolve to the same row.
+    """
+    reviews = state["reviews"]
+    if item in reviews:
+        return item
+    match = _ITEM_KEY_RE.search(strip_markdown_links(item))
+    if match is None:
+        return None
+    ticket = match.group(0).lower()
+    for key in reviews:
+        found = _ITEM_KEY_RE.search(strip_markdown_links(key))
+        if found is not None and found.group(0).lower() == ticket:
+            return key
+    return None
+
+
+def bulk_update_reviews(week_key: str, updates: list[ReviewUpdate]) -> list[str]:
+    """Add or update items in the reviews section in one read-modify-write cycle.
+
+    Each item in *updates* must have:
+        item          (str) — the story, ideally a Markdown link such as
+                              ``[PROJ-123](https://.../browse/PROJ-123)``
+        role          (str) — my role on it (e.g. 'Assignee' or 'Delegate')
+        story_status  (str) — the story's own status (e.g. 'In Progress')
+        status        (str) — my personal status (e.g. 'To Do',
+                              'Reviewed and Approved')
+
+    An existing row for the same ticket id is updated in place (its display
+    key is preserved). Returns one human-readable result string per update.
+    """
+    with _week_write(week_key) as reminders:
+        state = _load_state(week_key)
+        results: list[str] = []
+
+        for update in updates:
+            item = update["item"]
+            key = _find_review_key(state, item) or linkify_jira_refs(item)
+            state["reviews"][key] = {
+                "role": update["role"],
+                "storyStatus": update["story_status"],
+                "status": update["status"],
+            }
+            results.append(f"{key} → {update['status']}")
+
+        _save_state(state, reminders=reminders)
+        return results
+
+
+def remove_review(week_key: str, item: str) -> None:
+    """Remove an item from the reviews section."""
+    with _week_write(week_key) as reminders:
+        state = _load_state(week_key)
+        key = _find_review_key(state, item)
+        if key is None:
+            raise ValueError(f"Review item {item!r} not found.")
+        del state["reviews"][key]
+        _save_state(state, reminders=reminders)
+
+
+def list_reviews(week_key: str) -> dict[str, ReviewEntry]:
+    """Return the reviews dict for the given week (any ISO date within it)."""
+    normalized_week_key = get_week_key(date.fromisoformat(week_key))
+    return _load_state(normalized_week_key)["reviews"]
 
 
 def set_project_role(week_key: str, project: str, role: str) -> str:
