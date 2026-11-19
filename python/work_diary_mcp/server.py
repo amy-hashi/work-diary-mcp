@@ -10,6 +10,7 @@ from work_diary_mcp.diary import (
     add_note,
     add_reminder,
     bulk_update_projects,
+    bulk_update_reviews,
     clear_project_note,
     delete_note,
     edit_note,
@@ -23,6 +24,7 @@ from work_diary_mcp.diary import (
     list_week_keys,
     parse_week_key,
     remove_project,
+    remove_review,
     rename_project,
     set_project_role,
     set_reminder_completed,
@@ -270,6 +272,53 @@ def bulk_update_projects_tool(
             f"{prefix}✅ Updated {len(results)} project(s) for the week of "
             f"**{page['week_label']}**:\n\n{result_lines}"
         )
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+def bulk_update_reviews_tool(
+    updates: Annotated[
+        list[dict[str, object]],
+        "List of review items. Each must have 'item' (str; ideally a Markdown "
+        "link such as '[PROJ-123](https://.../browse/PROJ-123)'), 'role' (str, "
+        "e.g. 'Assignee' or 'Delegate'), 'story_status' (str, the story's own "
+        "status) and 'status' (str, my personal status: 'To Do' or "
+        "'Reviewed and Approved').",
+    ],
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
+) -> str:
+    """Add or update items in the reviews section of a week's diary.
+
+    The reviews section is separate from project status. Each row tracks a
+    story, my role on it, the story's status, and my own review status. An
+    existing row for the same ticket id is updated in place.
+    Defaults to the current week.
+    """
+    try:
+        page = _resolve_target_page(date)
+        results = bulk_update_reviews(page["week_key"], updates)
+        result_lines = "\n".join(f"- {r}" for r in results)
+        _maybe_auto_sync(page["week_key"])
+        return (
+            f"✅ Updated {len(results)} review item(s) for the week of "
+            f"**{page['week_label']}**:\n\n{result_lines}"
+        )
+    except Exception as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
+def remove_review_tool(
+    item: Annotated[str, "The review item to remove (ticket id such as 'PROJ-123', or its link)."],
+    date: Annotated[str | None, _DATE_HELP_TEXT] = None,
+) -> str:
+    """Remove an item from the reviews section of a specific diary week."""
+    try:
+        page = _resolve_target_page(date)
+        remove_review(page["week_key"], item)
+        _maybe_auto_sync(page["week_key"])
+        return f"✅ Removed review item '{item}' for the week of **{page['week_label']}**."
     except Exception as e:
         raise ToolError(str(e)) from e
 

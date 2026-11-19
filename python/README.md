@@ -123,6 +123,7 @@ You can also configure Jira linkification via environment variables:
 
 - `WORK_DIARY_JIRA_BASE_URL`
 - `WORK_DIARY_JIRA_PREFIXES`
+- `WORK_DIARY_REVIEWS_TITLE` (heading for the reviews section; default `Reviews`)
 
 Example:
 
@@ -185,6 +186,7 @@ Settings file keys:
 - `jira_prefixes` — the list of Jira project key prefixes that should be linkified
 - `sync_path` — path to a cloud-synced folder for `push_diary_to_sync_folder`
 - `auto_sync` — boolean (`true`/`false`); when `true`, every diary write automatically copies the affected week to the sync folder
+- `reviews_title` — heading for the reviews section (default `Reviews`)
 
 `jira_base_url` must be a non-empty URL and must include a scheme such as `https://`.
 
@@ -222,6 +224,8 @@ The configured path is expanded automatically and the directory is created on fi
 |------|-------------|
 | `update_project_status` | Update or add a project's status, with an optional inline note and an optional role. Pass `append_note: true` to append to an existing note instead of replacing it. For `role`, pass `null` (or omit it) to leave any existing role unchanged, an empty string to clear it, or any accepted role value to set it. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
 | `bulk_update_projects` | Update multiple projects in a single operation — more efficient than calling `update_project_status` repeatedly. Each entry may optionally include a `role`, with the same `null`/`""`/value semantics as `update_project_status`. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and out-of-range positive references are treated as literal project names rather than raising. |
+| `bulk_update_reviews` | Add or update items in the separate **reviews** section (see below). Each entry needs `item` (ideally a Markdown link such as `[PROJ-123](https://.../browse/PROJ-123)`), `role` (e.g. `Assignee` / `Delegate`), `story_status` (the story's own status) and `status` (your own review status: `To Do` or `Reviewed and Approved`). An existing row for the same ticket id is updated in place. Supports an optional `date` to target a specific week. |
+| `remove_review` | Remove an item from the reviews section by ticket id (e.g. `PROJ-123`) or link. Supports an optional `date` to target a specific week. |
 | `set_project_role` | Set or clear the role for an existing project. Accepts canonical role names (`Sponsor`, `Guide`, `Catcher`, `Advisor`, `Catalyst`, `Participant`), emoji shortcodes (`:rocket:`, `:world_map:`, `:fire_extinguisher:`, `:compass:`, `:test_tube:`, `:raising_hand:`), bare emoji, or already-formatted display values. Pass an empty string to clear the role. Supports an optional `date` to target a specific week. |
 | `rename_project` | Rename a project, preserving its status and note. Supports an optional `date` to target a specific week. Existing projects can also be referenced by row number, for example `project 2`. Ambiguous row references raise an error, `project 0` is always invalid, and row references must be in range for rename operations. |
 | `add_note` | Append a note to the general notes section. Supports an optional `date` to target a specific week. |
@@ -416,6 +420,13 @@ Each week's diary is stored as two files in the configured data directory, keyed
   "projectRoles": {
     "[Project Phoenix](https://jira.example.com/browse/PROJ-123)": "🚀 Sponsor"
   },
+  "reviews": {
+    "[PROJ-200](https://jira.example.com/browse/PROJ-200)": {
+      "role": "Delegate",
+      "storyStatus": "In Progress",
+      "status": "To Do"
+    }
+  },
   "notes": [
     {
       "content": "Kickoff meeting with TPM for Platform Infra."
@@ -440,10 +451,18 @@ Each week's diary is stored as two files in the configured data directory, keyed
 |---------|------|--------|-------|
 | [Project Phoenix](https://jira.example.com/browse/PROJ-123) | 🚀 Sponsor | 🟢 On Track | A few bugs found; [PROJ-124](https://jira.example.com/browse/PROJ-124) opened to track. |
 
+## Reviews
+
+| Story | My Role | Story Status | My Status |
+|-------|---------|--------------|-----------|
+| [PROJ-200](https://jira.example.com/browse/PROJ-200) | Delegate | In Progress | ☐ To Do |
+
 ## Notes
 
 - **[1]** Kickoff meeting with TPM for Platform Infra.
 ```
+
+The **Reviews** section is separate from Project Status and is only rendered when at least one item is tracked. "My Status" is `☐ To Do` or `✅ Reviewed & Approved`. Rename the heading with `WORK_DIARY_REVIEWS_TITLE` or `reviews_title` in the settings file (for example `Team Reviews`).
 
 ---
 

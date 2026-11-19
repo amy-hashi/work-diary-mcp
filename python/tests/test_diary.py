@@ -482,6 +482,7 @@ class TestHistoricalWeekWrites:
             "projects": {},
             "projectNotes": {},
             "projectRoles": {},
+            "reviews": {},
             "notes": [],
         }
 
@@ -533,6 +534,7 @@ class TestHistoricalWeekWrites:
             "projects": {"Carry Me": "On Track"},
             "projectNotes": {},
             "projectRoles": {},
+            "reviews": {},
             "notes": [],
         }
 
@@ -579,6 +581,7 @@ class TestHistoricalWeekWrites:
             "projects": {"Past Project": "On Track"},
             "projectNotes": {},
             "projectRoles": {},
+            "reviews": {},
         }
 
 
@@ -1694,6 +1697,7 @@ class TestCarryForward:
             "projects": {},
             "projectNotes": {},
             "projectRoles": {},
+            "reviews": {},
         }  # notes are never carried forward
 
     def test_carries_non_completed_projects(self, diary_dir):
@@ -3739,3 +3743,138 @@ class TestProjectRoles:
 
         state = diary_mod._load_state(week_key)
         assert state["projectRoles"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Reviews section
+# ---------------------------------------------------------------------------
+
+
+class TestReviews:
+    LINK = "[PROJ-1](https://jira.example.com/browse/PROJ-1)"
+
+    def _update(self, week_key, **overrides):
+        update = {
+            "item": self.LINK,
+            "role": "Delegate",
+            "story_status": "In Progress",
+            "status": "To Do",
+        }
+        update.update(overrides)
+        return diary_mod.bulk_update_reviews(week_key, [update])
+
+    @pytest.fixture(autouse=True)
+    def _isolated_title(self, monkeypatch, tmp_path):
+        """Never read the real settings file or env when resolving the title."""
+        from work_diary_mcp import config
+
+        monkeypatch.delenv("WORK_DIARY_REVIEWS_TITLE", raising=False)
+        monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "no-settings.toml")
+        config.get_reviews_title.cache_clear()
+        yield
+        config.get_reviews_title.cache_clear()
+
+    def test_add_and_render_section(self, diary_dir, monkeypatch):
+        from work_diary_mcp import config
+
+        monkeypatch.setenv("WORK_DIARY_REVIEWS_TITLE", "Team Reviews")
+        config.get_reviews_title.cache_clear()
+
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        self._update(week_key)
+        md = diary_mod.get_diary_markdown(week_key)
+
+        assert "## Team Reviews" in md
+        assert "| Story | My Role | Story Status | My Status |" in md
+        assert f"| {self.LINK} | Delegate | In Progress | ☐ To Do |" in md
+        # Reviews are a separate section from Project Status.
+        assert md.index("## Project Status") < md.index("## Team Reviews") < md.index("## Notes")
+
+    def test_title_from_settings_file(self, diary_dir, monkeypatch, tmp_path):
+        from work_diary_mcp import config
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text('reviews_title = "My Reviews"\n', encoding="utf-8")
+        monkeypatch.setattr(config, "SETTINGS_FILE", settings)
+        config.get_reviews_title.cache_clear()
+
+        assert config.get_reviews_title() == "My Reviews"
+
+    def test_section_hidden_when_empty(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        assert "## Reviews" not in diary_mod.get_diary_markdown(week_key)
+
+    def test_default_title(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        self._update(week_key)
+        assert "## Reviews" in diary_mod.get_diary_markdown(week_key)
+
+    def test_update_in_place_by_ticket_id(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        self._update(week_key)
+        # Same ticket, different link text/URL -> same row, original key kept.
+        self._update(
+            week_key,
+            item="[PROJ-1](https://elsewhere.example/PROJ-1)",
+            story_status="Done",
+            status="Reviewed and Approved",
+        )
+        reviews = diary_mod.list_reviews(week_key)
+        assert list(reviews) == [self.LINK]
+        assert reviews[self.LINK] == {
+            "role": "Delegate",
+            "storyStatus": "Done",
+            "status": "Reviewed and Approved",
+        }
+        assert "✅ Reviewed & Approved" in diary_mod.get_diary_markdown(week_key)
+
+    def test_remove_review(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        self._update(week_key)
+        diary_mod.remove_review(week_key, "PROJ-1")
+        assert diary_mod.list_reviews(week_key) == {}
+        with pytest.raises(ValueError, match="not found"):
+            diary_mod.remove_review(week_key, "PROJ-1")
+
+    def test_carry_forward_until_story_done(self, diary_dir):
+        prior = "2026-03-02"
+        diary_mod.get_or_create_page_for_week(prior)
+        diary_mod.bulk_update_reviews(
+            prior,
+            [
+                {
+                    "item": "[PROJ-1](https://x/PROJ-1)",
+                    "role": "Delegate",
+                    "story_status": "In Progress",
+                    "status": "Reviewed and Approved",
+                },
+                {
+                    "item": "[PROJ-2](https://x/PROJ-2)",
+                    "role": "Assignee",
+                    "story_status": "Done",
+                    "status": "Reviewed and Approved",
+                },
+            ],
+        )
+
+        carried = diary_mod._get_carry_forward_state()["reviews"]
+
+        assert list(carried) == ["[PROJ-1](https://x/PROJ-1)"]
+        # My own status survives the week boundary.
+        assert carried["[PROJ-1](https://x/PROJ-1)"]["status"] == "Reviewed and Approved"
+
+    def test_legacy_state_without_reviews_loads(self, diary_dir):
+        week_key = "2026-03-02"
+        (diary_dir / f"{week_key}.json").write_text(
+            json.dumps(
+                {
+                    "weekKey": week_key,
+                    "projects": {},
+                    "projectNotes": {},
+                    "projectRoles": {},
+                    "notes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert diary_mod.list_reviews(week_key) == {}
