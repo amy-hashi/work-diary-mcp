@@ -13,6 +13,12 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 - New `WORK_DIARY_SYNC_PATH` environment variable and `sync_path` settings file key for configuring the cloud-sync destination folder. Supports `~` expansion. Resolution order: environment variable, then settings file.
 - New `WORK_DIARY_AUTO_SYNC` environment variable and `auto_sync` settings file key (boolean, default `false`). When enabled, every diary write operation automatically copies the affected week's Markdown file to the configured sync folder. Failures during auto-sync are suppressed and never interfere with the primary write.
 
+### Security
+- Updated all dependencies to resolve every advisory reported by `pip-audit` (including `fastmcp` 3 to 4, `mcp`, `starlette`, `authlib`, `pyjwt`, `cryptography` and `python-multipart`). The server only speaks stdio, so most of these affected code paths that are not exposed in normal use, but the lockfile now audits clean.
+- Raised the minimum `fastmcp` version to `4.1.2` so fresh installs cannot resolve a vulnerable release.
+- CI workflows now run with read-only `contents` permission, and third-party actions are pinned to commit SHAs.
+- Added `.github/dependabot.yml` for weekly dependency and GitHub Actions updates.
+
 ### Fixed
 - Persisted Markdown diary files (`.md`) are now written with a UTF-8 BOM (`utf-8-sig` encoding) so that applications which do not auto-detect encoding (e.g. Box Notes) render emoji and other non-ASCII characters correctly. JSON files (`*.json`, `reminders.json`) continue to be written without a BOM, as required by the JSON standard. Existing `.md` files on disk will receive a BOM the next time they are re-rendered (e.g. when a project or reminder is updated).
 
