@@ -3828,6 +3828,40 @@ class TestReviews:
         }
         assert "✅ Reviewed & Approved" in diary_mod.get_diary_markdown(week_key)
 
+    def test_match_by_ticket_id_in_link_destination(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        titled = "[Design review](https://jira.example.com/browse/PROJ-200)"
+        self._update(week_key, item=titled)
+
+        # A bare id, a labelled link, or a re-linked URL all hit the same row.
+        self._update(week_key, item="PROJ-200", story_status="Done")
+        self._update(
+            week_key,
+            item="[PROJ-200](https://elsewhere.example/PROJ-200)",
+            story_status="Done",
+            status="Reviewed and Approved",
+        )
+
+        reviews = diary_mod.list_reviews(week_key)
+        assert list(reviews) == [titled]
+        assert reviews[titled]["storyStatus"] == "Done"
+        assert reviews[titled]["status"] == "Reviewed and Approved"
+
+    def test_remove_by_ticket_id_when_label_has_no_id(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        self._update(
+            week_key,
+            item='[Design review](https://jira.example.com/browse/PROJ-200 "Some title")',
+        )
+        diary_mod.remove_review(week_key, "PROJ-200")
+        assert diary_mod.list_reviews(week_key) == {}
+
+    def test_link_host_is_not_mistaken_for_ticket_id(self, diary_dir):
+        week_key = diary_mod.get_or_create_week_page()["week_key"]
+        self._update(week_key, item="[Notes](https://jira-2.example.com/wiki/page)")
+        self._update(week_key, item="[Other](https://jira-2.example.com/wiki/other)")
+        assert len(diary_mod.list_reviews(week_key)) == 2
+
     def test_remove_review(self, diary_dir):
         week_key = diary_mod.get_or_create_week_page()["week_key"]
         self._update(week_key)
