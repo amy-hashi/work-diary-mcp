@@ -6,7 +6,10 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-19
+
 ### Added
+- The bundled skill (`skill/cli.py` and `skill/SKILL.md`) gains `list-reviews`, `bulk-update-reviews` and `remove-review` commands, so the reviews section can be driven without the MCP server.
 - New **reviews** section in the weekly diary, separate from project status. Each row tracks a story (as a link), your role on it, the story's own status, and your personal review status (`☐ To Do` / `✅ Reviewed & Approved`). Stored in a new `reviews` field on the persisted diary state (legacy files load cleanly with an empty map), rendered only when at least one item is tracked, and carried forward week-over-week until the story's status is terminal. Adds `bulk_update_reviews` and `remove_review` MCP tools (and `list_reviews`, `bulk_update_reviews`, `remove_review` library functions). Rows are matched by ticket id so re-linking never duplicates an item.
 - New `WORK_DIARY_REVIEWS_TITLE` environment variable and `reviews_title` settings file key to rename the reviews section heading (default `Reviews`).
 - New `push_diary_to_sync_folder` MCP tool that copies the current (or any specified) week's Markdown diary file into a configured cloud-sync folder such as Box Drive, OneDrive, iCloud Drive, or Dropbox. The destination folder is created automatically if it does not exist; calling the tool again overwrites the previously copied file. Cloud sync is entirely optional: the tool returns a clear error message when `WORK_DIARY_SYNC_PATH` is not configured rather than failing silently.
