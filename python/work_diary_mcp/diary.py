@@ -9,9 +9,14 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 from typing import NotRequired, TypedDict
+from urllib.parse import urlparse
 
 from work_diary_mcp.config import get_data_dir
-from work_diary_mcp.jira import linkify_jira_refs, strip_markdown_links
+from work_diary_mcp.jira import (
+    linkify_jira_refs,
+    markdown_link_destinations,
+    strip_markdown_links,
+)
 from work_diary_mcp.roles import format_role
 from work_diary_mcp.statuses import is_completed
 
@@ -1368,6 +1373,23 @@ def remove_project(week_key: str, project: str) -> None:
         _save_state(state, reminders=reminders)
 
 
+def _review_ticket_id(item: str) -> str | None:
+    """Return the lower-cased ticket id for a review item, or None.
+
+    The id is taken from the visible text first (a bare id, or a Markdown link
+    label such as ``[PROJ-123](...)``). If the text has none, e.g.
+    ``[Design review](https://jira.example.com/browse/PROJ-123)``, the id is
+    taken from the path of a link destination instead.
+    """
+    match = _ITEM_KEY_RE.search(strip_markdown_links(item))
+    if match is None:
+        for destination in markdown_link_destinations(item):
+            match = _ITEM_KEY_RE.search(urlparse(destination).path)
+            if match is not None:
+                break
+    return match.group(0).lower() if match is not None else None
+
+
 def _find_review_key(state: DiaryState, item: str) -> str | None:
     """Return the existing review key matching *item*, or None.
 
@@ -1377,13 +1399,11 @@ def _find_review_key(state: DiaryState, item: str) -> str | None:
     reviews = state["reviews"]
     if item in reviews:
         return item
-    match = _ITEM_KEY_RE.search(strip_markdown_links(item))
-    if match is None:
+    ticket = _review_ticket_id(item)
+    if ticket is None:
         return None
-    ticket = match.group(0).lower()
     for key in reviews:
-        found = _ITEM_KEY_RE.search(strip_markdown_links(key))
-        if found is not None and found.group(0).lower() == ticket:
+        if _review_ticket_id(key) == ticket:
             return key
     return None
 
